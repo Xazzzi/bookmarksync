@@ -49,7 +49,6 @@ class SafariParser: BrowserParser {
         let type = dict["WebBookmarkType"] as? String
         let uriDict = dict["URIDictionary"] as? [String: Any]
         let title = dict["Title"] as? String ?? uriDict?["title"] as? String ?? "Unknown"
-        let uuid = dict["WebBookmarkUUID"] as? String ?? UUID().uuidString
         
         if type == "WebBookmarkTypeList" {
             let normalized = title
