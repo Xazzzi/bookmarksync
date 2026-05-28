@@ -1,0 +1,6 @@
+.antigravitycli/
+build/
+DerivedData/
+BookmarkSync.xcodeproj/
+.DS_Store
+.derived-data-log-*

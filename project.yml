@@ -1,0 +1,57 @@
+name: BookmarkSync
+options:
+  bundleIdPrefix: app.xazi
+  makeSharedSchemes: true
+packages:
+  SQLite.swift:
+    url: https://github.com/stephencelis/SQLite.swift.git
+    from: 0.16.0
+targets:
+  BookmarkSync:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources: BookmarkSync
+    dependencies:
+      - package: SQLite.swift
+        product: SQLite
+    info:
+      path: BookmarkSync/Info.plist
+      properties:
+        LSUIElement: true
+        CFBundleIdentifier: app.xazi.BookmarkSync
+        CFBundleName: BookmarkSync
+        CFBundleShortVersionString: 1.0.0
+        CFBundleVersion: 1
+    settings:
+      CODE_SIGN_STYLE: Automatic
+      DEVELOPMENT_TEAM: MCC7MZGLZ8
+  BookmarkSyncTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources: BookmarkSyncTests
+    dependencies:
+      - target: BookmarkSync
+    info:
+      path: BookmarkSyncTests/Info.plist
+      properties:
+        CFBundleIdentifier: app.xazi.BookmarkSyncTests
+        CFBundleName: BookmarkSyncTests
+        CFBundleShortVersionString: 1.0.0
+        CFBundleVersion: 1
+    settings:
+      CODE_SIGN_STYLE: Automatic
+      DEVELOPMENT_TEAM: MCC7MZGLZ8
+schemes:
+  BookmarkSync:
+    build:
+      targets:
+        BookmarkSync: all
+        BookmarkSyncTests: [test]
+    run:
+      environmentVariables:
+        OS_ACTIVITY_MODE: disable
+    test:
+      targets:
+        - BookmarkSyncTests
