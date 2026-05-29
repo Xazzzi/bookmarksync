@@ -208,3 +208,14 @@ struct BackupsView: View {
         }
     }
 }
+
+#Preview {
+    do {
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: BrowserConfig.self, BookmarkNode.self, ProfileSet.self, configurations: config)
+        return BackupsView(viewModel: AppViewModel())
+            .modelContainer(container)
+    } catch {
+        return Text("Failed to create container: \(error.localizedDescription)")
+    }
+}

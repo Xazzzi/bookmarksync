@@ -14,42 +14,60 @@ struct TrayMenu: View {
                 Text("BookmarkSync")
                     .font(.system(size: 14, weight: .bold))
 
-                Text("(\(viewModel.syncStatus))")
-                    .font(.system(size: 11))
-                    .foregroundColor(viewModel.syncStatus == "Idle" ? .secondary : .green)
-
                 Spacer()
 
                 HStack(spacing: 12) {
+                    // Order Sync Toggle
+                    Button(action: {
+                        viewModel.syncOrderEnabled.toggle()
+                    }) {
+                        Image(systemName: "arrow.up.arrow.down")
+                            .foregroundColor(viewModel.syncOrderEnabled ? .blue : .secondary)
+                            .font(.system(size: 14, weight: .bold))
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(viewModel.syncOrderEnabled ? "Order Sync is ON" : "Order Sync is OFF")
+
                     // Stop Button
                     Button(action: {
                         viewModel.syncState = .stopped
                     }) {
                         Image(systemName: "stop.fill")
                             .foregroundColor(viewModel.syncState == .stopped ? .red : .secondary)
-                            .font(.system(size: 13))
+                            .font(.system(size: 14))
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .help("Stop Syncing")
 
-                    // Play-Pause Button
+                    // Pause (Read-Only) Button
                     Button(action: {
-                        switch viewModel.syncState {
-                        case .stopped:
-                            viewModel.syncState = .readOnly
-                        case .readOnly:
-                            viewModel.syncState = .active
-                        case .active:
-                            viewModel.syncState = .readOnly
-                        }
+                        viewModel.syncState = .readOnly
                     }) {
-                        Image(systemName: viewModel.syncState == .active ? "pause.fill" : "play.fill")
-                            .foregroundColor(
-                                viewModel.syncState == .active ? .green :
-                                (viewModel.syncState == .readOnly ? .orange : .secondary)
-                            )
-                            .font(.system(size: 13))
+                        Image(systemName: "pause.fill")
+                            .foregroundColor(viewModel.syncState == .readOnly ? .orange : .secondary)
+                            .font(.system(size: 14))
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .help("Pause (Read-Only Mode)")
+
+                    // Play (Active) Button
+                    Button(action: {
+                        viewModel.syncState = .active
+                    }) {
+                        Image(systemName: "play.fill")
+                            .foregroundColor(viewModel.syncState == .active ? .green : .secondary)
+                            .font(.system(size: 14))
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Start (Active Syncing)")
                 }
             }
 
@@ -60,9 +78,9 @@ struct TrayMenu: View {
                 Text("Profiles")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(.secondary)
-                
+
                 Spacer()
-                
+
                 HStack(spacing: 4) {
                     if viewModel.profileSets.count > 1 {
                         ForEach(viewModel.profileSets) { pSet in
@@ -77,7 +95,7 @@ struct TrayMenu: View {
                             .help(pSet.name)
                         }
                     }
-                    
+
                     Button(action: {
                         let newNum = viewModel.profileSets.count + 1
                         let newSet = ProfileSet(name: "Set \(newNum)")
@@ -88,12 +106,13 @@ struct TrayMenu: View {
                         UserDefaults.standard.set(newSet.id, forKey: "selectedProfileSetId")
                     }) {
                         Image(systemName: "plus")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 14, weight: .bold))
                             .foregroundColor(.secondary)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .help("Add Profile Set")
                 }
             }
 
@@ -178,7 +197,9 @@ struct TrayMenu: View {
                                                 config.lastSyncTime = nil
                                                 viewModel.latestBrowserNodes[config.id] = nil
                                                 WriteQueue.shared.removePendingWrites(for: config.bookmarkFilePath)
-                                                viewModel.removeDiffs(for: config.bundleId)
+                                                viewModel.removeDiffs(for: config.bundleId, profileName: config.profileName)
+
+                                                viewModel.cleanOrphanedNodes(for: viewModel.selectedProfileSetId ?? "")
                                             }
                                             try? modelContext.save()
                                             viewModel.syncEngine?.triggerSync(changedPaths: [], forceImmediate: true)
@@ -194,7 +215,7 @@ struct TrayMenu: View {
                                     let adds = pendingDiffs.filter { $0.bookmarkTitle.hasPrefix("Add:") }.count
                                     let dels = pendingDiffs.filter { $0.bookmarkTitle.hasPrefix("Delete:") }.count
                                     let updates = pendingDiffs.filter { $0.bookmarkTitle.hasPrefix("Update:") }.count
-                                    
+
                                     if adds > 0 || dels > 0 || updates > 0 {
                                         HStack(spacing: 3) {
                                             if adds > 0 {
@@ -243,32 +264,35 @@ struct TrayMenu: View {
                 Text("Activity")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(.secondary)
-                
+
                 Spacer()
-                
+
                 Button(action: {
                     viewModel.isActivityFilterGlobal.toggle()
                 }) {
                     HStack(spacing: 3) {
                         Image(systemName: viewModel.isActivityFilterGlobal ? "globe" : "person.crop.circle")
+                            .font(.system(size: 14))
                         Text(viewModel.isActivityFilterGlobal ? "Global" : "Profile")
+                            .font(.system(size: 12, weight: .medium))
                     }
-                    .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
                     .background(Color.gray.opacity(0.1))
                     .cornerRadius(4)
                 }
                 .buttonStyle(.plain)
                 .help("Toggle Global/Profile Set Activity Filter")
-                
+
                 Button(action: {
                     viewModel.clearHistory()
                 }) {
                     Image(systemName: "trash")
-                        .font(.system(size: 11))
+                        .font(.system(size: 14))
                         .foregroundColor(.secondary)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help("Clear Activity")
@@ -276,6 +300,21 @@ struct TrayMenu: View {
 
             let filteredDiffs = viewModel.diffHistory.filter { diff in
                 viewModel.isActivityFilterGlobal ? true : diff.profileSetId == viewModel.selectedProfileSetId
+            }
+
+            if let errorStr = viewModel.queueError {
+                HStack(alignment: .top) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.red)
+                        .font(.system(size: 11))
+                    Text(errorStr)
+                        .font(.system(size: 11))
+                        .foregroundColor(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(6)
+                .background(Color.red.opacity(0.1))
+                .cornerRadius(4)
             }
 
             if filteredDiffs.isEmpty {
@@ -295,7 +334,7 @@ struct TrayMenu: View {
                                     ProfileSetIcon(name: setName, isActive: false)
                                         .padding(.trailing, 2)
                                 }
-                                
+
                                 HStack(spacing: 2) {
                                     ForEach(Array(diff.sourceBundleIds.enumerated()), id: \.element) { index, bid in
                                         if let icon = BrowserDiscoverer.getIcon(for: bid) {
@@ -352,36 +391,14 @@ struct TrayMenu: View {
                 HStack(spacing: 8) {
                     Button("Bookmarks") {
                         let isAltHeld = NSEvent.modifierFlags.contains(.option)
-                        if !isAltHeld, let window = NSApp.windows.first(where: { $0.title == "Unified Bookmarks" }) {
-                            window.makeKeyAndOrderFront(nil)
-                            NSApp.activate(ignoringOtherApps: true)
-                        } else {
-                            openWindow(id: "bookmarks")
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                NSApp.activate(ignoringOtherApps: true)
-                                if let window = NSApp.windows.first(where: { $0.title == "Unified Bookmarks" }) {
-                                    window.makeKeyAndOrderFront(nil)
-                                }
-                            }
-                        }
+                        handleWindow(id: "bookmarks", title: "Unified Bookmarks", forceNew: isAltHeld)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
 
                     Button("Backups") {
                         let isAltHeld = NSEvent.modifierFlags.contains(.option)
-                        if !isAltHeld, let window = NSApp.windows.first(where: { $0.title == "Backups Manager" }) {
-                            window.makeKeyAndOrderFront(nil)
-                            NSApp.activate(ignoringOtherApps: true)
-                        } else {
-                            openWindow(id: "backups")
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                NSApp.activate(ignoringOtherApps: true)
-                                if let window = NSApp.windows.first(where: { $0.title == "Backups Manager" }) {
-                                    window.makeKeyAndOrderFront(nil)
-                                }
-                            }
-                        }
+                        handleWindow(id: "backups", title: "Backups Manager", forceNew: isAltHeld)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -404,5 +421,34 @@ struct TrayMenu: View {
             viewModel.rescanProfiles()
         }
     }
-}
 
+    private func handleWindow(id: String, title: String, forceNew: Bool) {
+        if forceNew {
+            openWindow(id: id)
+        } else {
+            let tracked = title == "Unified Bookmarks"
+                ? DockManager.shared.lastActiveBookmarksWindow
+                : DockManager.shared.lastActiveBackupsWindow
+            
+            let existing = NSApp.windows.filter { $0.title == title }
+            
+            // Fallback hierarchy: 
+            // 1. Tracked window on current space
+            // 2. Any window on current space
+            // 3. Tracked window anywhere
+            // 4. Any window anywhere
+            let target = (tracked?.isOnActiveSpace == true ? tracked : nil)
+                ?? existing.first(where: { $0.isOnActiveSpace })
+                ?? tracked
+                ?? existing.first
+            
+            if let window = target {
+                window.makeKeyAndOrderFront(nil)
+            } else {
+                openWindow(id: id)
+            }
+        }
+
+        NSApp.activate(ignoringOtherApps: true)
+    }
+}

@@ -28,3 +28,13 @@ struct GlobalSetIcon: View {
             .background(Circle().fill(isActive ? Color.accentColor : Color.gray.opacity(0.6)))
     }
 }
+
+#Preview {
+    HStack {
+        ProfileSetIcon(name: "Set 1", isActive: true)
+        ProfileSetIcon(name: "Set 2", isActive: false)
+        GlobalSetIcon(isActive: true)
+        GlobalSetIcon(isActive: false)
+    }
+    .padding()
+}

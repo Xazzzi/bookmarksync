@@ -40,7 +40,8 @@ struct BookmarksTreeView: View {
                     type: node.type,
                     parentId: strippedParentId,
                     mtime: node.mtime,
-                    profileSetId: nil
+                    profileSetId: nil,
+                    index: node.index
                 )
                 mergedMap[strippedId] = mergedNode
             }
@@ -158,9 +159,9 @@ struct BookmarksTreeView: View {
                         Image(systemName: "bookmark.slash")
                             .font(.system(size: 32))
                             .foregroundColor(.secondary)
-                        Text("No Ground Truth Bookmarks")
+                        Text("No Bookmarks")
                             .font(.headline)
-                        Text("Connect profiles in the tray and sync to populate ground truth.")
+                        Text("Connect profiles in the tray and sync to import them here.")
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
@@ -422,6 +423,7 @@ struct BookmarksTreeView: View {
                                     VStack(spacing: 8) {
                                         MetadataRow(label: "Node ID", value: node.id)
                                         MetadataRow(label: "Parent ID", value: node.parentId ?? "None")
+                                        MetadataRow(label: "Index", value: "\(node.index)")
                                         MetadataRow(label: "Last Modified", value: formattedDate(node.mtime))
                                     }
                                     .padding(10)
@@ -506,14 +508,6 @@ struct BookmarksTreeView: View {
         .onAppear {
             viewModel.modelContext = modelContext
             viewModel.rescanProfiles()
-            
-            // Force focus/activation of this window
-            DispatchQueue.main.async {
-                NSApp.activate(ignoringOtherApps: true)
-                if let window = NSApp.windows.first(where: { $0.title == "Unified Bookmarks" }) {
-                    window.makeKeyAndOrderFront(nil)
-                }
-            }
         }
     }
     
@@ -548,9 +542,10 @@ struct BookmarksTreeView: View {
             let type: BookmarkType
             let mtime: Date
             let parentId: String?
+            let index: Int
         }
         
-        let localNodes = filteredNodes.map { LocalNode(id: $0.id, title: $0.title, url: $0.url, type: $0.type, mtime: $0.mtime, parentId: $0.parentId) }
+        let localNodes = filteredNodes.map { LocalNode(id: $0.id, title: $0.title, url: $0.url, type: $0.type, mtime: $0.mtime, parentId: $0.parentId, index: $0.index) }
         
         class TreeNode {
             let id: String
@@ -559,6 +554,7 @@ struct BookmarksTreeView: View {
             let type: BookmarkType
             let mtime: Date
             let parentId: String?
+            let index: Int
             var children: [TreeNode]
             
             init(node: LocalNode) {
@@ -568,6 +564,7 @@ struct BookmarksTreeView: View {
                 self.type = node.type
                 self.mtime = node.mtime
                 self.parentId = node.parentId
+                self.index = node.index
                 self.children = []
             }
             
@@ -579,6 +576,7 @@ struct BookmarksTreeView: View {
                     type: type,
                     mtime: mtime,
                     parentId: parentId,
+                    index: index,
                     children: type == .folder ? children.map { $0.toModelElement() } : nil
                 )
             }
@@ -609,10 +607,13 @@ struct BookmarksTreeView: View {
                 }
                 return copy
             }.sorted { a, b in
-                if a.type != b.type {
-                    return a.type == .folder
+                if a.index == b.index {
+                    if a.type != b.type {
+                        return a.type == .folder
+                    }
+                    return a.title.localizedCompare(b.title) == .orderedAscending
                 }
-                return a.title.localizedCompare(b.title) == .orderedAscending
+                return a.index < b.index
             }
         }
         
@@ -700,6 +701,7 @@ struct BookmarkTreeModelElement: Identifiable {
     let type: BookmarkType
     let mtime: Date
     let parentId: String?
+    let index: Int
     var children: [BookmarkTreeModelElement]?
 }
 
@@ -733,10 +735,11 @@ struct BookmarkFolderRow: View {
             HStack(spacing: 6) {
                 // Expanding chevron
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.secondary)
                     .rotationEffect(isExpanded ? .degrees(90) : .degrees(0))
-                    .frame(width: 10, height: 10)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
                     .onTapGesture {
                         toggleExpand()
                     }
@@ -805,10 +808,10 @@ struct BookmarkLeafRow: View {
     var body: some View {
         HStack(spacing: 6) {
             // Spacer to align perfectly with folders (chevron width + folder offset)
-            Spacer()
-                .frame(width: 10)
+//            Spacer()
+//                .frame(width: 0)
             
-            Image(systemName: "globe")
+            Image(systemName: "link")
                 .font(.system(size: 12))
                 .foregroundColor(selectedId == element.id ? .white.opacity(0.8) : .secondary)
             
@@ -818,7 +821,7 @@ struct BookmarkLeafRow: View {
             
             Spacer()
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 10)
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .background(
@@ -861,6 +864,54 @@ struct MetadataRow: View {
                 .lineLimit(5)
                 .multilineTextAlignment(.trailing)
         }
+    }
+}
+
+#Preview("Empty State") {
+    do {
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: BookmarkNode.self, BrowserConfig.self, ProfileSet.self, configurations: config)
+        return BookmarksTreeView(viewModel: AppViewModel())
+            .modelContainer(container)
+    } catch {
+        return Text("Failed to create container: \(error.localizedDescription)")
+    }
+}
+
+#Preview("With Dummy Data") {
+    do {
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: BookmarkNode.self, BrowserConfig.self, ProfileSet.self, configurations: config)
+        let context = container.mainContext
+        
+        let pSet = ProfileSet(name: "Set 1")
+        context.insert(pSet)
+        
+        let browser = BrowserConfig(id: "safari-1", bundleId: "com.apple.Safari", browserName: "Safari", profileName: "Default", bookmarkFilePath: "/dummy/path", isEnabled: true, profileSetId: pSet.id)
+        context.insert(browser)
+        
+        let folder1 = BookmarkNode(id: "\(pSet.id):folder1", title: "Development", type: .folder, mtime: Date(), profileSetId: pSet.id, index: 0)
+        context.insert(folder1)
+        
+        let leaf1 = BookmarkNode(id: "\(pSet.id):node1", title: "Apple Developer", url: "https://developer.apple.com", type: .leaf, parentId: folder1.id, mtime: Date(), profileSetId: pSet.id, index: 0)
+        context.insert(leaf1)
+        
+        let leaf2 = BookmarkNode(id: "\(pSet.id):node2", title: "SwiftUI Docs", url: "https://developer.apple.com/xcode/swiftui/", type: .leaf, parentId: folder1.id, mtime: Date(), profileSetId: pSet.id, index: 1)
+        context.insert(leaf2)
+        
+        let leaf3 = BookmarkNode(id: "\(pSet.id):node3", title: "Google", url: "https://google.com", type: .leaf, mtime: Date(), profileSetId: pSet.id, index: 1)
+        context.insert(leaf3)
+        
+        try context.save()
+        
+        let viewModel = AppViewModel()
+        viewModel.profileSets = [pSet]
+        viewModel.selectedProfileSetId = pSet.id
+        
+        return BookmarksTreeView(viewModel: viewModel)
+            .modelContainer(container)
+    } catch {
+        return Text("Failed to create container: \(error.localizedDescription)")
     }
 }
 

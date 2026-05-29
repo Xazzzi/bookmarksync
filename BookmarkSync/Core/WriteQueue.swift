@@ -61,13 +61,16 @@ class WriteQueue {
     }
     
     private func flush() {
-        let runningApps = NSWorkspace.shared.runningApplications.compactMap { $0.bundleIdentifier }
+        let runningApps = NSWorkspace.shared.runningApplications
+            .filter { !$0.isTerminated }
+            .compactMap { $0.bundleIdentifier }
         
         queueLock.lock()
         var remaining: [PendingWrite] = []
         for pending in queue {
             if runningApps.contains(pending.bundleId) {
                 // Browser is running, wait until it quits to safely write
+                print("WriteQueue: Waiting for \(pending.bundleId) to completely quit before writing...")
                 remaining.append(pending)
             } else {
                 do {
@@ -78,11 +81,15 @@ class WriteQueue {
                     print("Successfully wrote to \(pending.bundleId)")
                     
                     DispatchQueue.main.async { [weak self, bundleId = pending.bundleId] in
+                        self?.viewModel?.queueError = nil
                         self?.viewModel?.markBrowserSynced(bundleId: bundleId)
                     }
                 } catch {
                     print("Write error for \(pending.bundleId): \(error)")
-                    // Optionally retry, but for now we drop it or it could loop forever if permissions fail
+                    DispatchQueue.main.async { [weak self] in
+                        self?.viewModel?.queueError = "Write error (\(pending.bundleId)): \(error.localizedDescription)"
+                    }
+                    remaining.append(pending)
                 }
             }
         }

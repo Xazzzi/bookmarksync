@@ -20,6 +20,7 @@ class FirefoxParser: BrowserParser {
         let b_parent = Expression<Int64>("parent")
         let b_title = Expression<String?>("title")
         let b_dateAdded = Expression<Int64>("dateAdded")
+        let b_position = Expression<Int64>("position")
         
         let p_id = Expression<Int64>("id")
         let p_url = Expression<String?>("url")
@@ -35,40 +36,83 @@ class FirefoxParser: BrowserParser {
         
         let rows = Array(try db.prepare(query))
         var idToTitle: [Int64: String] = [:]
+        var idToParent: [Int64: Int64] = [:]
         
-        for row in rows {
+        let sortedRows = rows.sorted {
+            let p1 = $0[bookmarks[b_parent]]
+            let p2 = $1[bookmarks[b_parent]]
+            if p1 == p2 { return $0[bookmarks[b_position]] < $1[bookmarks[b_position]] }
+            return p1 < p2
+        }
+        
+        for row in sortedRows {
             let id = row[bookmarks[b_id]]
             let title = row[bookmarks[b_title]] ?? "Unknown"
-            idToTitle[id] = title
-            
             let parent = row[bookmarks[b_parent]]
-            let type = row[bookmarks[b_type]]
             
-            if type == 2 {
+            idToTitle[id] = title
+            idToParent[id] = parent
+            
+            if row[bookmarks[b_type]] == 2 {
                 let prefix = idToPrefix[parent] ?? "other"
                 idToPrefix[id] = prefix
             }
         }
         
-        for row in rows {
+        var idToPath: [Int64: String] = [:]
+        idToPath[3] = "bookmark_bar"
+        idToPath[5] = "other"
+        
+        var seenKeys: [String: Int] = [:]
+        
+        func getPath(for id: Int64) -> String {
+            if let path = idToPath[id] { return path }
+            if [1,2,4].contains(id) { return "other" }
+            
+            let parent = idToParent[id] ?? 5
+            let title = idToTitle[id] ?? "Unknown"
+            
+            let parentPath = getPath(for: parent)
+            let baseId = "\(parentPath):\(title)"
+            
+            let count = seenKeys[baseId, default: 0]
+            seenKeys[baseId] = count + 1
+            let path = count == 0 ? baseId : "\(baseId):dup\(count)"
+            
+            idToPath[id] = path
+            return path
+        }
+        
+        // Pre-warm paths to ensure deterministic dup counters for folders
+        for row in sortedRows where row[bookmarks[b_type]] == 2 {
+            _ = getPath(for: row[bookmarks[b_id]])
+        }
+        
+        for row in sortedRows {
             let id = row[bookmarks[b_id]]
             let type = row[bookmarks[b_type]] // 1=leaf, 2=folder
             let parent = row[bookmarks[b_parent]]
             let title = row[bookmarks[b_title]] ?? "Unknown"
             let url = row[places[p_url]]
             
-            let prefix = idToPrefix[parent] ?? "other"
-            
             if [1,2,3,4,5].contains(id) { continue }
             
             let normalized = url != nil ? normalizeURL(url!) : title
-            let uniqueId = "\(prefix):\(normalized)"
+            let parentPath = getPath(for: parent)
+            
+            let uniqueId: String
+            if type == 2 {
+                uniqueId = getPath(for: id)
+            } else {
+                let baseId = "\(parentPath):\(normalized)"
+                let count = seenKeys[baseId, default: 0]
+                seenKeys[baseId] = count + 1
+                uniqueId = count == 0 ? baseId : "\(baseId):dup\(count)"
+            }
             
             var parentUniqueId: String? = nil
             if parent > 5 {
-                let parentTitle = idToTitle[parent] ?? "Unknown"
-                let parentPrefix = idToPrefix[parent] ?? prefix
-                parentUniqueId = "\(parentPrefix):\(parentTitle)"
+                parentUniqueId = getPath(for: parent)
             }
             
             let bNode = BookmarkNode(
@@ -77,7 +121,8 @@ class FirefoxParser: BrowserParser {
                 url: url,
                 type: type == 2 ? .folder : .leaf,
                 parentId: parentUniqueId,
-                mtime: Date(timeIntervalSince1970: Double(row[bookmarks[b_dateAdded]]) / 1_000_000)
+                mtime: Date(timeIntervalSince1970: Double(row[bookmarks[b_dateAdded]]) / 1_000_000),
+                index: Int(row[bookmarks[b_position]])
             )
             result.append(bNode)
         }

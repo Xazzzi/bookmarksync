@@ -17,6 +17,7 @@ class SafariParser: BrowserParser {
         }
         
         var result: [BookmarkNode] = []
+        var seenKeys: [String: Int] = [:]
         
         if profileName == "Default" {
             for rootChild in rootChildren {
@@ -24,8 +25,8 @@ class SafariParser: BrowserParser {
                 if title == "BookmarksBar" || title == "BookmarksMenu" {
                     let prefix = title == "BookmarksBar" ? "bookmark_bar" : "other"
                     if let children = rootChild["Children"] as? [[String: Any]] {
-                        for child in children {
-                            result.append(contentsOf: parseNode(child, parentId: nil, prefix: prefix))
+                        for (i, child) in children.enumerated() {
+                            result.append(contentsOf: parseNode(child, parentId: nil, prefix: prefix, index: i, seenKeys: &seenKeys))
                         }
                     }
                 }
@@ -33,8 +34,8 @@ class SafariParser: BrowserParser {
         } else {
             if let profileNode = rootChildren.first(where: { ($0["Title"] as? String) == profileName }) {
                 if let children = profileNode["Children"] as? [[String: Any]] {
-                    for child in children {
-                        result.append(contentsOf: parseNode(child, parentId: nil, prefix: "bookmark_bar"))
+                    for (i, child) in children.enumerated() {
+                        result.append(contentsOf: parseNode(child, parentId: nil, prefix: "bookmark_bar", index: i, seenKeys: &seenKeys))
                     }
                 }
             }
@@ -43,7 +44,7 @@ class SafariParser: BrowserParser {
         return result
     }
     
-    private func parseNode(_ dict: [String: Any], parentId: String?, prefix: String) -> [BookmarkNode] {
+    private func parseNode(_ dict: [String: Any], parentId: String?, prefix: String, index: Int, seenKeys: inout [String: Int]) -> [BookmarkNode] {
         var nodes: [BookmarkNode] = []
         
         let type = dict["WebBookmarkType"] as? String
@@ -52,20 +53,26 @@ class SafariParser: BrowserParser {
         
         if type == "WebBookmarkTypeList" {
             let normalized = title
-            let uniqueId = "\(prefix):\(normalized)"
-            let node = BookmarkNode(id: uniqueId, title: title, url: nil, type: .folder, parentId: parentId, mtime: Date(timeIntervalSince1970: 0))
+            let baseId = parentId != nil ? "\(parentId!):\(normalized)" : "\(prefix):\(normalized)"
+            let count = seenKeys[baseId, default: 0]
+            seenKeys[baseId] = count + 1
+            let uniqueId = count == 0 ? baseId : "\(baseId):dup\(count)"
+            let node = BookmarkNode(id: uniqueId, title: title, url: nil, type: .folder, parentId: parentId, mtime: Date(timeIntervalSince1970: 0), index: index)
             nodes.append(node)
             
             if let children = dict["Children"] as? [[String: Any]] {
-                for child in children {
-                    nodes.append(contentsOf: parseNode(child, parentId: uniqueId, prefix: prefix))
+                for (i, child) in children.enumerated() {
+                    nodes.append(contentsOf: parseNode(child, parentId: uniqueId, prefix: prefix, index: i, seenKeys: &seenKeys))
                 }
             }
         } else if type == "WebBookmarkTypeLeaf" {
             let url = dict["URLString"] as? String
             let normalized = url != nil ? normalizeURL(url!) : title
-            let uniqueId = "\(prefix):\(normalized)"
-            let node = BookmarkNode(id: uniqueId, title: title, url: url, type: .leaf, parentId: parentId, mtime: Date(timeIntervalSince1970: 0))
+            let baseId = parentId != nil ? "\(parentId!):\(normalized)" : "\(prefix):\(normalized)"
+            let count = seenKeys[baseId, default: 0]
+            seenKeys[baseId] = count + 1
+            let uniqueId = count == 0 ? baseId : "\(baseId):dup\(count)"
+            let node = BookmarkNode(id: uniqueId, title: title, url: url, type: .leaf, parentId: parentId, mtime: Date(timeIntervalSince1970: 0), index: index)
             nodes.append(node)
         }
         
@@ -82,7 +89,8 @@ class SafariParser: BrowserParser {
                 url: node.url,
                 type: node.type,
                 parentId: node.parentId.map { stripProfileSetPrefix($0) },
-                mtime: node.mtime
+                mtime: node.mtime,
+                index: node.index
             )
         }
         
@@ -92,7 +100,8 @@ class SafariParser: BrowserParser {
         
         func buildTree(prefix: String, parentId: String?) -> [[String: Any]] {
             let childrenNodes = strippedNodes.filter { $0.id.starts(with: prefix + ":") && $0.parentId == parentId }
-            return childrenNodes.map { node in
+            let sortedChildren = childrenNodes.sorted(by: { $0.index < $1.index })
+            return sortedChildren.map { node in
                 var dict: [String: Any] = [
                     "Title": node.title,
                     "WebBookmarkUUID": UUID().uuidString

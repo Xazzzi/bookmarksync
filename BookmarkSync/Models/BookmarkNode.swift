@@ -71,6 +71,7 @@ struct BookmarkNodeRecord: Codable {
     var url: String?
     var type: BookmarkType
     var parentId: String?
+    var index: Int?
 }
 
 @Model
@@ -82,8 +83,9 @@ final class BookmarkNode {
     var parentId: String?
     var mtime: Date
     var profileSetId: String?
+    var index: Int = 0
     
-    init(id: String, title: String, url: String? = nil, type: BookmarkType, parentId: String? = nil, mtime: Date, profileSetId: String? = nil) {
+    init(id: String, title: String, url: String? = nil, type: BookmarkType, parentId: String? = nil, mtime: Date, profileSetId: String? = nil, index: Int = 0) {
         self.id = id
         self.title = title
         self.url = url
@@ -91,5 +93,6 @@ final class BookmarkNode {
         self.parentId = parentId
         self.mtime = mtime
         self.profileSetId = profileSetId
+        self.index = index
     }
 }

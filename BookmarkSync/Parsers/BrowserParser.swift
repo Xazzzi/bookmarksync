@@ -24,6 +24,19 @@ extension BrowserParser {
             try? fm.copyItem(at: filePath, to: dailyBackupURL)
         }
         
+        // Clean up old daily backups (keep only the last 7)
+        if let files = try? fm.contentsOfDirectory(atPath: baseDir.path) {
+            let dailyPrefix = "\(filename).backup.daily."
+            let dailyBackups = files.filter { $0.hasPrefix(dailyPrefix) }.sorted()
+            if dailyBackups.count > 7 {
+                let backupsToDelete = dailyBackups.prefix(dailyBackups.count - 7)
+                for oldBackup in backupsToDelete {
+                    let oldURL = baseDir.appendingPathComponent(oldBackup)
+                    try? fm.removeItem(at: oldURL)
+                }
+            }
+        }
+        
         // 2. Rotating Backups (filename.backup.1, .2, .3)
         let backup3 = baseDir.appendingPathComponent("\(filename).backup.3")
         let backup2 = baseDir.appendingPathComponent("\(filename).backup.2")
@@ -36,6 +49,7 @@ extension BrowserParser {
         if fm.fileExists(atPath: backup1.path) {
             try? fm.moveItem(at: backup1, to: backup2)
         }
+        try? fm.removeItem(at: backup1)
         try fm.copyItem(at: filePath, to: backup1)
     }
 }

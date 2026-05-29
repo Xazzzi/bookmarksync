@@ -131,7 +131,8 @@ class SyncEngine {
                                 type: rawNode.type,
                                 parentId: rawNode.parentId != nil ? "\(currentSetId):\(rawNode.parentId!)" : nil,
                                 mtime: rawNode.mtime,
-                                profileSetId: currentSetId
+                                profileSetId: currentSetId,
+                                index: rawNode.index
                             )
                         }
                         configCurrentNodes[config.id] = mappedNodes
@@ -156,7 +157,8 @@ class SyncEngine {
                                 type: record.type,
                                 parentId: record.parentId,
                                 mtime: Date(),
-                                profileSetId: currentSetId
+                                profileSetId: currentSetId,
+                                index: record.index ?? 0
                             )
                         }
                         previousLatestNodes[config.id] = nodeMap
@@ -243,19 +245,22 @@ class SyncEngine {
                     for (id, currentNode) in currentDict {
                         if let latestNode = latestDict[id] {
                             if config.lastSyncTime != nil {
-                                if currentNode.title != latestNode.title || currentNode.url != latestNode.url || currentNode.parentId != latestNode.parentId {
+                                if currentNode.title != latestNode.title || currentNode.url != latestNode.url || currentNode.parentId != latestNode.parentId || currentNode.index != latestNode.index {
                                     if let stateNode = updatedStateNodes.first(where: { $0.id == id }) {
-                                        let oldTitle = stateNode.title
-                                        stateNode.title = currentNode.title
-                                        stateNode.url = currentNode.url
-                                        stateNode.parentId = currentNode.parentId
-                                        stateNode.mtime = Date()
-                                        hasChanges = true
-                                        print("SyncEngine [Import]: Updated \(currentNode.title) (\(id)) in Hub")
-                                        
-                                        // Cancel any pending diffs for the old or new title!
-                                        viewModel.cancelPendingDiffs(for: oldTitle)
-                                        viewModel.cancelPendingDiffs(for: currentNode.title)
+                                        if stateNode.title != currentNode.title || stateNode.url != currentNode.url || stateNode.parentId != currentNode.parentId || stateNode.index != currentNode.index {
+                                            let oldTitle = stateNode.title
+                                            stateNode.title = currentNode.title
+                                            stateNode.url = currentNode.url
+                                            stateNode.parentId = currentNode.parentId
+                                            stateNode.index = currentNode.index
+                                            stateNode.mtime = Date()
+                                            hasChanges = true
+                                            print("SyncEngine [Import]: Updated \(currentNode.title) (\(id)) in Hub")
+                                            
+                                            // Cancel any pending diffs for the old or new title!
+                                            viewModel.cancelPendingDiffs(for: oldTitle)
+                                            viewModel.cancelPendingDiffs(for: currentNode.title)
+                                        }
                                     } else {
                                         // Node was deleted from Hub by another profile, but this profile updated it! Resurrect it.
                                         let newNode = BookmarkNode(
@@ -265,7 +270,8 @@ class SyncEngine {
                                             type: currentNode.type,
                                             parentId: currentNode.parentId,
                                             mtime: Date(),
-                                            profileSetId: currentSetId
+                                            profileSetId: currentSetId,
+                                            index: currentNode.index
                                         )
                                         updatedStateNodes.append(newNode)
                                         modelContext.insert(newNode)
@@ -286,7 +292,8 @@ class SyncEngine {
                                     type: currentNode.type,
                                     parentId: currentNode.parentId,
                                     mtime: Date(),
-                                    profileSetId: currentSetId
+                                    profileSetId: currentSetId,
+                                    index: currentNode.index
                                 )
                                 updatedStateNodes.append(newNode)
                                 modelContext.insert(newNode)
@@ -311,6 +318,32 @@ class SyncEngine {
                     updatedStateNodes = filteredNodes
                 }
                 
+                // Normalize indexes to resolve any collisions
+                var parentGroups: [String?: [BookmarkNode]] = [:]
+                for node in updatedStateNodes {
+                    parentGroups[node.parentId, default: []].append(node)
+                }
+                
+                for (_, children) in parentGroups {
+                    let sortedChildren = children.sorted { 
+                        if $0.index == $1.index {
+                            if $0.mtime == $1.mtime {
+                                return $0.id < $1.id
+                            }
+                            return $0.mtime > $1.mtime // Newest modification wins tie (gets earlier index)
+                        }
+                        return $0.index < $1.index 
+                    }
+                    
+                    for (i, child) in sortedChildren.enumerated() {
+                        if child.index != i {
+                            child.index = i
+                            hasChanges = true
+                            print("SyncEngine [Import]: Normalized index for \(child.title) to \(i)")
+                        }
+                    }
+                }
+                
                 if hasChanges {
                     try modelContext.save()
                 }
@@ -322,11 +355,14 @@ class SyncEngine {
                     let stateDict = Dictionary(updatedStateNodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
                     
                     var mismatchTitles: [String] = []
+                    var needsReorder = false
                     
                     for (id, stateNode) in stateDict {
                         if let currentNode = currentDict[id] {
                             if currentNode.title != stateNode.title || currentNode.url != stateNode.url || currentNode.parentId != stateNode.parentId {
                                 mismatchTitles.append("Update: \(stateNode.title)")
+                            } else if viewModel.syncOrderEnabled && currentNode.index != stateNode.index {
+                                needsReorder = true
                             }
                         } else {
                             mismatchTitles.append("Add: \(stateNode.title)")
@@ -344,12 +380,25 @@ class SyncEngine {
                         }
                     }
                     
-                    if !mismatchTitles.isEmpty {
-                        print("SyncEngine [Export]: Browser \(config.browserName) (\(config.profileName)) is out of sync. Changes: \(mismatchTitles.count)")
-                        
-                        for diffTitle in mismatchTitles {
+                    if !mismatchTitles.isEmpty || needsReorder {
+                        if !mismatchTitles.isEmpty {
+                            print("SyncEngine [Export]: Browser \(config.browserName) (\(config.profileName)) is out of sync. Changes: \(mismatchTitles.count)")
+                            for diffTitle in mismatchTitles {
+                                let diff = DiffRecord(
+                                    bookmarkTitle: diffTitle,
+                                    sourceBundleIds: ["System"],
+                                    targetBundleIds: [config.bundleId],
+                                    sourceProfileNames: ["System"],
+                                    targetProfileNames: [config.profileName],
+                                    isWaiting: true,
+                                    profileSetId: currentSetId
+                                )
+                                viewModel.addDiff(diff)
+                            }
+                        } else if needsReorder {
+                            print("SyncEngine [Export]: Browser \(config.browserName) (\(config.profileName)) is out of order. Triggering Reorder.")
                             let diff = DiffRecord(
-                                bookmarkTitle: diffTitle,
+                                bookmarkTitle: "Reorder",
                                 sourceBundleIds: ["System"],
                                 targetBundleIds: [config.bundleId],
                                 sourceProfileNames: ["System"],
@@ -369,7 +418,8 @@ class SyncEngine {
                                     type: node.type,
                                     parentId: node.parentId,
                                     mtime: node.mtime,
-                                    profileSetId: currentSetId
+                                    profileSetId: currentSetId,
+                                    index: node.index
                                 )
                             }
                             
@@ -389,7 +439,8 @@ class SyncEngine {
                             title: node.title,
                             url: node.url,
                             type: node.type,
-                            parentId: node.parentId
+                            parentId: node.parentId,
+                            index: node.index
                         )
                     }
                     viewModel.latestBrowserNodes[config.id] = nodeMap
@@ -473,7 +524,8 @@ class SyncEngine {
                         type: record.type,
                         parentId: record.parentId,
                         mtime: Date(),
-                        profileSetId: profileSetId
+                        profileSetId: profileSetId,
+                        index: record.index ?? 0
                     )
                 }
                 latestNodes = nodeMap
@@ -500,11 +552,14 @@ class SyncEngine {
             for (id, currentNode) in currentDict {
                 if let latestNode = latestNodes[id] {
                     if !isNewlyEnabled {
-                        if currentNode.title != latestNode.title || currentNode.url != latestNode.url || currentNode.parentId != latestNode.parentId {
+                        if currentNode.title != latestNode.title || currentNode.url != latestNode.url || currentNode.parentId != latestNode.parentId || currentNode.index != latestNode.index {
                             if let stateNode = updatedStateNodes.first(where: { $0.id == id }) {
-                                stateNode.title = currentNode.title
-                                stateNode.url = currentNode.url
-                                stateNode.parentId = currentNode.parentId
+                                if stateNode.title != currentNode.title || stateNode.url != currentNode.url || stateNode.parentId != currentNode.parentId || stateNode.index != currentNode.index {
+                                    stateNode.title = currentNode.title
+                                    stateNode.url = currentNode.url
+                                    stateNode.parentId = currentNode.parentId
+                                    stateNode.index = currentNode.index
+                                }
                             }
                         }
                     }
@@ -517,6 +572,28 @@ class SyncEngine {
         }
         
         let filtered = filterEmptyFolders(nodes: updatedStateNodes)
+        
+        var parentGroups: [String?: [BookmarkNode]] = [:]
+        for node in filtered {
+            parentGroups[node.parentId, default: []].append(node)
+        }
+        
+        for (_, children) in parentGroups {
+            let sortedChildren = children.sorted { 
+                if $0.index == $1.index {
+                    if $0.mtime == $1.mtime {
+                        return $0.id < $1.id
+                    }
+                    return $0.mtime > $1.mtime
+                }
+                return $0.index < $1.index 
+            }
+            
+            for (i, child) in sortedChildren.enumerated() {
+                child.index = i
+            }
+        }
+        
         return (filtered, [])
     }
 }

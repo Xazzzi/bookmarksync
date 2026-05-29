@@ -32,38 +32,44 @@ class ChromeParser: BrowserParser {
         let bookmarks = try JSONDecoder().decode(ChromeBookmarks.self, from: data)
         var result: [BookmarkNode] = []
         
-        func traverse(node: ChromeNode, prefix: String, parentId: String?) {
+        var seenKeys: [String: Int] = [:]
+        
+        func traverse(node: ChromeNode, prefix: String, parentId: String?, index: Int) {
             let normalized = node.url != nil ? normalizeURL(node.url!) : node.name
-            let uniqueId = "\(prefix):\(normalized)"
+            let baseId = parentId != nil ? "\(parentId!):\(normalized)" : "\(prefix):\(normalized)"
+            let count = seenKeys[baseId, default: 0]
+            seenKeys[baseId] = count + 1
+            let uniqueId = count == 0 ? baseId : "\(baseId):dup\(count)"
             let bNode = BookmarkNode(
                 id: uniqueId,
                 title: node.name,
                 url: node.url,
                 type: node.type == "folder" ? .folder : .leaf,
                 parentId: parentId,
-                mtime: webKitToDate(node.date_modified ?? node.date_added)
+                mtime: webKitToDate(node.date_modified ?? node.date_added),
+                index: index
             )
             result.append(bNode)
             if let children = node.children {
-                for child in children {
-                    traverse(node: child, prefix: prefix, parentId: uniqueId)
+                for (i, child) in children.enumerated() {
+                    traverse(node: child, prefix: prefix, parentId: uniqueId, index: i)
                 }
             }
         }
         
         if let children = bookmarks.roots.bookmark_bar.children {
-            for child in children {
-                traverse(node: child, prefix: "bookmark_bar", parentId: nil)
+            for (i, child) in children.enumerated() {
+                traverse(node: child, prefix: "bookmark_bar", parentId: nil, index: i)
             }
         }
         if let children = bookmarks.roots.other.children {
-            for child in children {
-                traverse(node: child, prefix: "other", parentId: nil)
+            for (i, child) in children.enumerated() {
+                traverse(node: child, prefix: "other", parentId: nil, index: i)
             }
         }
         if let children = bookmarks.roots.synced.children {
-            for child in children {
-                traverse(node: child, prefix: "synced", parentId: nil)
+            for (i, child) in children.enumerated() {
+                traverse(node: child, prefix: "synced", parentId: nil, index: i)
             }
         }
         
@@ -92,13 +98,15 @@ class ChromeParser: BrowserParser {
                 url: node.url,
                 type: node.type,
                 parentId: node.parentId.map { stripProfileSetPrefix($0) },
-                mtime: node.mtime
+                mtime: node.mtime,
+                index: node.index
             )
         }
         
         func buildTree(prefix: String, parentId: String?) -> [[String: Any]] {
             let children = strippedNodes.filter { $0.id.starts(with: prefix + ":") && $0.parentId == parentId }
-            return children.map { node in
+            let sortedChildren = children.sorted(by: { $0.index < $1.index })
+            return sortedChildren.map { node in
                 var dict: [String: Any] = [
                     "id": node.id,
                     "name": node.title,
