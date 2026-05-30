@@ -42,6 +42,11 @@ struct BookmarkSyncApp: App {
             BookmarksTreeView(viewModel: viewModel)
                 .modelContainer(sharedModelContainer)
         }
+        
+        WindowGroup("Welcome to BookmarkSync", id: "onboarding") {
+            OnboardingView()
+        }
+        .windowResizability(.contentSize)
     }
     
     private func setupSync() {

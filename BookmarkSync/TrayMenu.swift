@@ -6,6 +6,7 @@ struct TrayMenu: View {
     @Query var configs: [BrowserConfig]
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openWindow) private var openWindow
+    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -17,18 +18,6 @@ struct TrayMenu: View {
                 Spacer()
 
                 HStack(spacing: 12) {
-                    // Order Sync Toggle
-                    Button(action: {
-                        viewModel.syncOrderEnabled.toggle()
-                    }) {
-                        Image(systemName: "arrow.up.arrow.down")
-                            .foregroundColor(viewModel.syncOrderEnabled ? .blue : .secondary)
-                            .font(.system(size: 14, weight: .bold))
-                            .frame(width: 22, height: 22)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(viewModel.syncOrderEnabled ? "Order Sync is ON" : "Order Sync is OFF")
 
                     // Stop Button
                     Button(action: {
@@ -189,12 +178,14 @@ struct TrayMenu: View {
                                                 config.profileSetId = viewModel.selectedProfileSetId
                                                 config.isEnabled = true
                                                 config.lastSyncTime = nil
+                                                config.observedStateData = nil
                                                 viewModel.lastSyncTimes[config.id] = nil
                                                 viewModel.latestBrowserNodes[config.id] = nil
                                             } else {
                                                 config.profileSetId = nil
                                                 config.isEnabled = false
                                                 config.lastSyncTime = nil
+                                                config.observedStateData = nil
                                                 viewModel.latestBrowserNodes[config.id] = nil
                                                 WriteQueue.shared.removePendingWrites(for: config.bookmarkFilePath)
                                                 viewModel.removeDiffs(for: config.bundleId, profileName: config.profileName)
@@ -260,129 +251,7 @@ struct TrayMenu: View {
             Divider()
 
             // Queue / History Header
-            HStack {
-                Text("Activity")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(.secondary)
-
-                Spacer()
-
-                Button(action: {
-                    viewModel.isActivityFilterGlobal.toggle()
-                }) {
-                    HStack(spacing: 3) {
-                        Image(systemName: viewModel.isActivityFilterGlobal ? "globe" : "person.crop.circle")
-                            .font(.system(size: 14))
-                        Text(viewModel.isActivityFilterGlobal ? "Global" : "Profile")
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
-                    .background(Color.gray.opacity(0.1))
-                    .cornerRadius(4)
-                }
-                .buttonStyle(.plain)
-                .help("Toggle Global/Profile Set Activity Filter")
-
-                Button(action: {
-                    viewModel.clearHistory()
-                }) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 14))
-                        .foregroundColor(.secondary)
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Clear Activity")
-            }
-
-            let filteredDiffs = viewModel.diffHistory.filter { diff in
-                viewModel.isActivityFilterGlobal ? true : diff.profileSetId == viewModel.selectedProfileSetId
-            }
-
-            if let errorStr = viewModel.queueError {
-                HStack(alignment: .top) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(.red)
-                        .font(.system(size: 11))
-                    Text(errorStr)
-                        .font(.system(size: 11))
-                        .foregroundColor(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(6)
-                .background(Color.red.opacity(0.1))
-                .cornerRadius(4)
-            }
-
-            if filteredDiffs.isEmpty {
-                let currentSetId = viewModel.selectedProfileSetId
-                let hasActive = configs.contains(where: { $0.isEnabled && $0.profileSetId == currentSetId })
-                Text(hasActive ? "In sync" : "Idle")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .padding(.leading, 8)
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(filteredDiffs) { diff in
-                            HStack(spacing: 4) {
-                                if viewModel.isActivityFilterGlobal, let psId = diff.profileSetId {
-                                    let setName = viewModel.profileSets.first(where: { $0.id == psId })?.name ?? "Set"
-                                    ProfileSetIcon(name: setName, isActive: false)
-                                        .padding(.trailing, 2)
-                                }
-
-                                HStack(spacing: 2) {
-                                    ForEach(Array(diff.sourceBundleIds.enumerated()), id: \.element) { index, bid in
-                                        if let icon = BrowserDiscoverer.getIcon(for: bid) {
-                                            let profileName = index < diff.sourceProfileNames.count ? diff.sourceProfileNames[index] : ""
-                                            let browserName = bid == "com.apple.Safari" ? "Safari" : (bid == "com.google.Chrome" ? "Chrome" : (bid == "org.mozilla.firefox" ? "Firefox" : bid))
-                                            let tooltip = profileName.isEmpty ? browserName : "\(browserName) (\(profileName))"
-                                            Image(nsImage: icon)
-                                                .resizable()
-                                                .frame(width: 16, height: 16)
-                                                .help(tooltip)
-                                        }
-                                    }
-                                }
-
-                                Text(diff.bookmarkTitle)
-                                    .font(.system(size: 12))
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                                Image(systemName: "arrow.right")
-                                    .font(.system(size: 8))
-                                    .foregroundColor(.secondary)
-
-                                HStack(spacing: 2) {
-                                    ForEach(Array(diff.targetBundleIds.enumerated()), id: \.element) { index, bid in
-                                        if let icon = BrowserDiscoverer.getIcon(for: bid) {
-                                            let profileName = index < diff.targetProfileNames.count ? diff.targetProfileNames[index] : ""
-                                            let browserName = bid == "com.apple.Safari" ? "Safari" : (bid == "com.google.Chrome" ? "Chrome" : (bid == "org.mozilla.firefox" ? "Firefox" : bid))
-                                            let tooltip = profileName.isEmpty ? browserName : "\(browserName) (\(profileName))"
-                                            Image(nsImage: icon)
-                                                .resizable()
-                                                .frame(width: 16, height: 16)
-                                                .grayscale(diff.isWaiting ? 1.0 : 0.0)
-                                                .help(tooltip)
-                                        }
-                                    }
-                                }
-                            }
-                            .padding(.vertical, 2)
-                        }
-                    }
-                    .padding(.trailing, 12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.trailing, -12)
-                .frame(height: min(CGFloat(filteredDiffs.count) * 24, 150))
-            }
+            TrayMenuActivityView(viewModel: viewModel, configs: configs)
 
             Divider()
 
@@ -402,6 +271,15 @@ struct TrayMenu: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    
+                    Button(action: {
+                        handleWindow(id: "onboarding", title: "Welcome to BookmarkSync", forceNew: false)
+                    }) {
+                        Image(systemName: "questionmark.circle")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.secondary)
+                    .help("Open Onboarding & Help")
                 }
 
                 Spacer()
@@ -416,6 +294,10 @@ struct TrayMenu: View {
         .padding()
         .frame(width: 280)
         .onAppear {
+            if !hasSeenOnboarding {
+                handleWindow(id: "onboarding", title: "Welcome to BookmarkSync", forceNew: false)
+                hasSeenOnboarding = true
+            }
             viewModel.modelContext = modelContext
             viewModel.loadProfileSets()
             viewModel.rescanProfiles()
@@ -426,9 +308,14 @@ struct TrayMenu: View {
         if forceNew {
             openWindow(id: id)
         } else {
-            let tracked = title == "Unified Bookmarks"
-                ? DockManager.shared.lastActiveBookmarksWindow
-                : DockManager.shared.lastActiveBackupsWindow
+            let tracked: NSWindow?
+            if title == "Unified Bookmarks" {
+                tracked = DockManager.shared.lastActiveBookmarksWindow
+            } else if title == "Backups Manager" {
+                tracked = DockManager.shared.lastActiveBackupsWindow
+            } else {
+                tracked = nil
+            }
             
             let existing = NSApp.windows.filter { $0.title == title }
             
