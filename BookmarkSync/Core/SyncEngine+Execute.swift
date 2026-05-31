@@ -41,7 +41,15 @@ extension SyncEngine {
                     
                     if let parser = parser {
                         configParsers[config.id] = parser
-                        let rawNodes = (try? parser.read()) ?? []
+                        
+                        let rawNodes: [BookmarkNode]
+                        do {
+                            rawNodes = try parser.read()
+                        } catch {
+                            print("SyncEngine: Failed to read from \(config.browserName) (\(config.profileName)) - skipping: \(error)")
+                            continue
+                        }
+                        
                         let mappedNodes = rawNodes.map { rawNode in
                             BookmarkNode(
                                 id: "\(currentSetId):\(rawNode.id)",
@@ -277,7 +285,7 @@ extension SyncEngine {
                 
                 // --- EXPORT PHASE (Hub -> Spoke) ---
                 for config in activeConfigs {
-                    let currentNodes = configCurrentNodes[config.id] ?? []
+                    guard let currentNodes = configCurrentNodes[config.id] else { continue }
                     let currentDict = Dictionary(currentNodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
                     let stateDict = Dictionary(updatedStateNodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
                     

@@ -86,13 +86,7 @@ struct TrayMenu: View {
                     }
 
                     Button(action: {
-                        let newNum = viewModel.profileSets.count + 1
-                        let newSet = ProfileSet(name: "Set \(newNum)")
-                        modelContext.insert(newSet)
-                        try? modelContext.save()
-                        viewModel.loadProfileSets()
-                        viewModel.selectedProfileSetId = newSet.id
-                        UserDefaults.standard.set(newSet.id, forKey: "selectedProfileSetId")
+                        viewModel.addProfileSet()
                     }) {
                         Image(systemName: "plus")
                             .font(.system(size: 14, weight: .bold))

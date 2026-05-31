@@ -87,6 +87,23 @@ extension AppViewModel {
         // 4. Clear associated queue/diff history items
         diffHistory.removeAll { $0.profileSetId == id }
 
+        // 5. Renumber remaining sets to prevent gaps
+        if let remainingSets = try? context.fetch(FetchDescriptor<ProfileSet>()) {
+            let sortedSets = remainingSets.sorted { s1, s2 in
+                let prefix = "Set "
+                let n1 = s1.name.hasPrefix(prefix) ? (Int(s1.name.dropFirst(prefix.count)) ?? 0) : 0
+                let n2 = s2.name.hasPrefix(prefix) ? (Int(s2.name.dropFirst(prefix.count)) ?? 0) : 0
+                return n1 < n2
+            }
+            
+            for (index, set) in sortedSets.enumerated() {
+                if set.name.hasPrefix("Set ") {
+                    set.name = "Set \(index + 1)"
+                }
+            }
+            try? context.save()
+        }
+
         // Refresh local lists
         loadProfileSets()
     }
@@ -126,5 +143,25 @@ extension AppViewModel {
                 WriteQueue.shared.removePendingWrites(for: config.bookmarkFilePath)
             }
         }
+    }
+
+    func addProfileSet() {
+        guard let context = modelContext else { return }
+
+        // Find the maximum existing Set number to prevent duplicates
+        let existingNums = profileSets.compactMap { set -> Int? in
+            let prefix = "Set "
+            guard set.name.hasPrefix(prefix) else { return nil }
+            return Int(set.name.dropFirst(prefix.count))
+        }
+        let nextNum = (existingNums.max() ?? 0) + 1
+
+        let newSet = ProfileSet(name: "Set \(nextNum)")
+        context.insert(newSet)
+        try? context.save()
+        
+        loadProfileSets()
+        self.selectedProfileSetId = newSet.id
+        UserDefaults.standard.set(newSet.id, forKey: "selectedProfileSetId")
     }
 }
