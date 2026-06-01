@@ -25,9 +25,11 @@ struct BookmarksTreeView: View {
     @State var filterProfileSetId: String = "global"
     
     var filteredNodes: [BookmarkNode] {
+        let validNodes = allNodes.filter { !$0.isDeleted }
+        
         if filterProfileSetId == "global" {
             var mergedMap = [String: BookmarkNode]()
-            let sortedAll = allNodes.sorted(by: { $0.mtime < $1.mtime })
+            let sortedAll = validNodes.sorted(by: { $0.mtime < $1.mtime })
             
             for node in sortedAll {
                 let strippedId = stripProfileSetPrefix(node.id)
@@ -48,7 +50,7 @@ struct BookmarksTreeView: View {
             
             return Array(mergedMap.values).sorted(by: { $0.title < $1.title })
         } else {
-            return allNodes.filter { $0.profileSetId == filterProfileSetId }
+            return validNodes.filter { $0.profileSetId == filterProfileSetId }
         }
     }
     
@@ -89,7 +91,7 @@ struct BookmarksTreeView: View {
                         .buttonStyle(.plain)
                         .help("Global Bookmarks")
                         
-                        ForEach(profileSets) { pSet in
+                        ForEach(profileSets.filter { !$0.isDeleted }) { pSet in
                             Button(action: {
                                 filterProfileSetId = pSet.id
                             }) {
@@ -101,9 +103,13 @@ struct BookmarksTreeView: View {
                         
                         if filterProfileSetId != "global" {
                             Button(action: {
+                                selectedId = nil
                                 let idToDelete = filterProfileSetId
                                 filterProfileSetId = "global"
-                                viewModel.deleteProfileSet(withId: idToDelete)
+                                
+                                DispatchQueue.main.async {
+                                    viewModel.deleteProfileSet(withId: idToDelete)
+                                }
                             }) {
                                 Image(systemName: "folder.badge.minus")
                                     .foregroundColor(.red)
