@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BookmarkSync - Unify Your Browsers</title>
+    <link rel="icon" type="image/png" href="assets/icon.png" />
+    <meta
+      name="description"
+      content="Seamlessly sync bookmarks across Safari, Chrome, and Firefox directly from your Mac menu bar. Private, local, and lightning-fast."
+    />
+    <link rel="canonical" href="https://bookmarksync.xazi.app/" />
+    <meta
+      name="keywords"
+      content="bookmark sync, mac menu bar, safari sync, chrome sync, firefox sync, local bookmarks"
+    />
+    <meta name="theme-color" content="#050505" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://bookmarksync.xazi.app/" />
+    <meta property="og:title" content="BookmarkSync - Unify Your Browsers" />
+    <meta
+      property="og:description"
+      content="Seamlessly sync bookmarks across Safari, Chrome, and Firefox directly from your Mac menu bar. Private, local, and lightning-fast."
+    />
+    <meta
+      property="og:image"
+      content="https://bookmarksync.xazi.app/assets/mockup.jpg"
+    />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://bookmarksync.xazi.app/" />
+    <meta
+      property="twitter:title"
+      content="BookmarkSync - Unify Your Browsers"
+    />
+    <meta
+      property="twitter:description"
+      content="Seamlessly sync bookmarks across Safari, Chrome, and Firefox directly from your Mac menu bar. Private, local, and lightning-fast."
+    />
+    <meta
+      property="twitter:image"
+      content="https://bookmarksync.xazi.app/assets/mockup.jpg"
+    />
+
+    <!-- JSON-LD Schema -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "BookmarkSync",
+        "operatingSystem": "macOS",
+        "applicationCategory": "UtilitiesApplication",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "description": "Seamlessly sync bookmarks across Safari, Chrome, and Firefox directly from your Mac menu bar. Private, local, and lightning-fast."
+      }
+    </script>
+    <!-- Google tag (gtag.js) -->
+    <script
+      async
+      src="https://www.googletagmanager.com/gtag/js?id=G-9PBCXK3LYG"
+    ></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag("js", new Date());
+      gtag("config", "G-9PBCXK3LYG");
+    </script>
+
+    <link rel="stylesheet" href="style.css" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+
+    <nav class="glass-nav">
+      <div class="nav-content">
+        <div class="logo">
+          <img src="assets/icon.png" alt="BookmarkSync Logo" class="logo-img" />
+          <span>BookmarkSync</span>
+        </div>
+        <a href="assets/BookmarkSync.dmg" class="nav-btn">Download for Mac</a>
+      </div>
+    </nav>
+
+    <main>
+      <section class="hero">
+        <div class="hero-content">
+          <h1>
+            Unify Your Bookmarks.<br />
+            <span class="gradient-text"
+              >No&nbsp;extensions,<br />no&nbsp;cloud.</span
+            >
+          </h1>
+          <p class="subtitle">
+            Seamlessly sync bookmarks across Safari, Chrome, Firefox and others
+            directly from your menu bar.<br />
+            Private, local, easy.
+          </p>
+          <div class="hero-actions">
+            <a href="assets/BookmarkSync.dmg" class="btn btn-primary">
+              <span class="btn-icon">↓</span> Download BookmarkSync
+            </a>
+            <a href="#features" class="btn btn-secondary">Explore Features</a>
+          </div>
+        </div>
+        <div class="hero-visual">
+          <img
+            src="assets/mockup.png"
+            alt="BookmarkSync Interface Mockup"
+            class="hero-image"
+          />
+        </div>
+      </section>
+
+      <section id="features" class="features">
+        <h2 class="section-title">Built for Power Users</h2>
+        <div class="feature-grid">
+          <div class="feature-card glass-panel">
+            <div class="feature-icon">🛡️</div>
+            <h3>100% Local & Private</h3>
+            <p>
+              No cloud accounts needed. Your bookmarks stay on your Mac. Edits
+              directly write to native browser storage files.
+            </p>
+          </div>
+          <div class="feature-card glass-panel">
+            <div class="feature-icon">⚡️</div>
+            <h3>Reactive File Watching</h3>
+            <p>
+              Updates instantly when browser changes. Optimized FSEvents wrapper
+              ensures zero CPU overhead.
+            </p>
+          </div>
+          <div class="feature-card glass-panel">
+            <div class="feature-icon">🧠</div>
+            <h3>Smart Conflict Resolution</h3>
+            <p>
+              Advanced hierarchical merging. Robust URL normalization and folder
+              syncing ensures you never lose a link.
+            </p>
+          </div>
+          <div class="feature-card glass-panel">
+            <div class="feature-icon">✨</div>
+            <h3>Native macOS Experience</h3>
+            <p>
+              Resides discreetly in your menu bar. Built with Swift, perfectly
+              hidden from the Dock, minimal footprint.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="showcase">
+        <h2 class="section-title">Native UIs</h2>
+        <div class="showcase-container">
+          <div class="showcase-grid">
+            <div class="showcase-card">
+              <div class="img-wrapper">
+                <img
+                  src="assets/tray.png"
+                  alt="Menu Bar Popover"
+                  class="app-screenshot tray-img"
+                />
+              </div>
+              <h3>Menu Bar Control</h3>
+              <p>Access your profiles instantly from the macOS menu bar.</p>
+            </div>
+            <div class="showcase-card">
+              <div class="img-wrapper">
+                <img
+                  src="assets/backups.png"
+                  alt="Backups Manager"
+                  class="app-screenshot"
+                />
+              </div>
+              <h3>Robust Backups</h3>
+              <p>
+                Restore previous states with daily and rotating snapshot
+                backups.
+              </p>
+            </div>
+          </div>
+          <div class="showcase-card full-width">
+            <div class="img-wrapper">
+              <img
+                src="assets/main.png"
+                alt="Unified Bookmarks"
+                class="app-screenshot"
+              />
+            </div>
+            <h3>Unified Bookmarks</h3>
+            <p>Search and view sync status across all your browsers.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="footer-content glass-panel">
+        <div class="footer-logo">
+          <img src="assets/icon.png" alt="BookmarkSync Logo" />
+          <span>BookmarkSync</span>
+        </div>
+        <p>Built for macOS. Unifying Safari, Chrome & Firefox.</p>
+        <br />
+        <a href="assets/BookmarkSync.dmg" class="btn btn-primary">
+          <span class="btn-icon">↓</span> Download BookmarkSync
+        </a>
+      </div>
+    </footer>
+  </body>
+</html>
