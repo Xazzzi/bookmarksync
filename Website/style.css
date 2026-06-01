@@ -7,12 +7,17 @@
     --accent-3: #5856D6;
     --glass-bg: rgba(25, 25, 25, 0.6);
     --glass-border: rgba(255, 255, 255, 0.08);
+    box-sizing: border-box;
 }
 
 * {
     margin: 0;
     padding: 0;
-    box-sizing: border-box;
+    box-sizing: inherit;
+}
+
+html, body {
+    overflow-x: clip;
 }
 
 body {
@@ -20,48 +25,32 @@ body {
     background-color: var(--bg-color);
     color: var(--text-main);
     line-height: 1.6;
-    overflow-x: hidden;
     position: relative;
 }
 
-/* Background Blobs for vibrant aesthetics */
+
+
 .blob {
     position: absolute;
     filter: blur(100px);
     z-index: -1;
     opacity: 0.5;
-    animation: float 20s ease-in-out infinite alternate;
 }
 
 .blob-1 {
-    top: -10%;
-    left: -10%;
+    top: -100px;
+    left: -200px;
     width: 500px;
     height: 500px;
     background: radial-gradient(circle, var(--accent-1) 0%, transparent 70%);
 }
 
-.blob-2 {
-    top: 40%;
-    right: -10%;
+.blob-3 {
+    bottom: -200px;
+    right: 100px;
     width: 600px;
     height: 600px;
-    background: radial-gradient(circle, var(--accent-3) 0%, transparent 70%);
-    animation-delay: -5s;
-}
-
-.blob-3 {
-    bottom: -10%;
-    left: 20%;
-    width: 400px;
-    height: 400px;
     background: radial-gradient(circle, var(--accent-2) 0%, transparent 70%);
-    animation-delay: -10s;
-}
-
-@keyframes float {
-    0% { transform: translate(0, 0) scale(1); }
-    100% { transform: translate(30px, 50px) scale(1.1); }
 }
 
 /* Glassmorphism Utilities */
@@ -76,10 +65,9 @@ body {
 
 /* Navigation */
 .glass-nav {
-    position: fixed;
+    position: sticky;
     top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
+    margin: 20px auto;
     width: 90%;
     max-width: 1200px;
     background: rgba(20, 20, 20, 0.5);
@@ -223,8 +211,8 @@ h1 {
 }
 
 .hero-image {
-    width: 150%;
-    margin-right: -20%;
+    width: 100%;
+    --img-scale: 1.5;
     max-width: 1200px;
     height: auto;
     animation: float-icon 6s ease-in-out infinite alternate;
@@ -233,8 +221,8 @@ h1 {
 }
 
 @keyframes float-icon {
-    0% { transform: translateY(0); }
-    100% { transform: translateY(-20px); }
+    0% { transform: scale(var(--img-scale, 1)) translateY(0); }
+    100% { transform: scale(var(--img-scale, 1)) translateY(-20px); }
 }
 
 /* Features */
@@ -361,6 +349,7 @@ h1 {
     object-fit: contain;
     /* Underneath glow that respects image alpha channel */
     filter: drop-shadow(0 20px 60px rgba(88, 86, 214, 0.5));
+    transform: translateZ(0);
 }
 
 .tray-img {
@@ -402,7 +391,7 @@ footer {
 }
 
 /* Responsive */
-@media (max-width: 968px) {
+@media (max-width: 1024px) {
     .hero {
         flex-direction: column;
         text-align: center;
@@ -431,12 +420,64 @@ footer {
 
     .hero-image {
         margin-top: 40px;
-        width: 120%;
-        margin-left: -10%;
+        --img-scale: 1.2;
     }
 
     .showcase-grid {
         flex-direction: column;
         align-items: center;
+    }
+}
+
+@media (max-width: 600px) {
+    .nav-content {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .nav-content > div {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+    }
+
+    .glass-nav {
+        border-radius: 20px;
+    }
+
+    .nav-btn {
+        padding: 8px 16px;
+        font-size: 0.85rem;
+    }
+
+    .hero {
+        padding-top: 140px;
+    }
+
+    h1 {
+        font-size: 2.5rem;
+    }
+
+    .hero-actions {
+        flex-direction: column;
+        width: 100%;
+        gap: 12px;
+    }
+
+    .hero-actions .btn {
+        width: 100%;
+    }
+
+    .showcase {
+        padding-bottom: 40px;
+    }
+
+    footer {
+        padding: 20px 24px 40px;
+    }
+
+    .footer-content {
+        padding: 32px 20px;
     }
 }
