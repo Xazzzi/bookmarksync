@@ -85,17 +85,19 @@ struct TrayMenu: View {
                         }
                     }
 
-                    Button(action: {
-                        viewModel.addProfileSet()
-                    }) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.secondary)
-                            .frame(width: 22, height: 22)
-                            .contentShape(Rectangle())
+                    if viewModel.profileSets.count < 9 {
+                        Button(action: {
+                            viewModel.addProfileSet()
+                        }) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.secondary)
+                                .frame(width: 22, height: 22)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Add Profile Set")
                     }
-                    .buttonStyle(.plain)
-                    .help("Add Profile Set")
                 }
             }
 

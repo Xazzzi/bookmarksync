@@ -146,6 +146,7 @@ extension AppViewModel {
     }
 
     func addProfileSet() {
+        guard profileSets.count < 9 else { return }
         guard let context = modelContext else { return }
 
         // Find the maximum existing Set number to prevent duplicates
