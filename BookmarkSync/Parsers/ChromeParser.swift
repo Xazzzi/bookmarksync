@@ -86,6 +86,10 @@ class ChromeParser: BrowserParser {
                 index: node.index
             )
         }
+
+        // Group siblings once; the recursive tree build below then does O(1)
+        // lookups instead of rescanning every node per folder.
+        let childIndex = BookmarkChildIndex(strippedNodes: strippedNodes)
         
         let data = try Data(contentsOf: filePath)
         guard var root = try JSONSerialization.jsonObject(with: data, options: .mutableContainers) as? [String: Any] else {
@@ -154,8 +158,7 @@ class ChromeParser: BrowserParser {
         }
         
         func buildTree(prefix: String, parentId: String?) -> [[String: Any]] {
-            let children = strippedNodes.filter { $0.id.starts(with: prefix + ":") && $0.parentId == parentId }
-            let sortedChildren = children.sorted(by: { $0.index < $1.index })
+            let sortedChildren = childIndex.children(prefix: prefix, parentId: parentId)
             return sortedChildren.map { node in
                 var dict: [String: Any] = originalMapByTopologicalId[node.id] ?? [:]
                 

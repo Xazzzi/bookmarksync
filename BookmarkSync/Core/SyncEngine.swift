@@ -3,6 +3,10 @@ import SwiftData
 
 @MainActor
 class SyncEngine {
+    /// Upper bound on individual bookmark titles recorded in the activity feed
+    /// per profile, per sync. Beyond this a single summary row is added instead.
+    static let diffSampleLimit = 20
+
     private static var watcher: FileWatcher?
     let modelContext: ModelContext
     let viewModel: AppViewModel
@@ -21,7 +25,7 @@ class SyncEngine {
         let now = Date()
         let filteredPaths = changedPaths.filter { path in
             if let lastWrite = WriteQueue.lastWriteTimes[path], now.timeIntervalSince(lastWrite) < 5.0 {
-                print("SyncEngine: Ignoring change on \(path) from our own write")
+                SyncLog.verbose("Ignoring change on \(path) from our own write")
                 return false
             }
             return true

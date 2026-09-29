@@ -215,6 +215,10 @@ class FirefoxParser: BrowserParser {
                 index: node.index
             )
         }
+
+        // Group siblings once; the recursive tree build below then does O(1)
+        // lookups instead of rescanning every node per folder.
+        let childIndex = BookmarkChildIndex(strippedNodes: strippedNodes)
         
         let db = try Connection(filePath.path, readonly: false)
         try db.execute("PRAGMA journal_mode=WAL;")
@@ -261,9 +265,8 @@ class FirefoxParser: BrowserParser {
             }
             
             func insertTree(prefix: String, parentLogicalId: String?, parentDbId: Int64) throws {
-                let children = strippedNodes.filter { $0.id.starts(with: prefix + ":") && $0.parentId == parentLogicalId }
-                let sorted = children.sorted(by: { $0.index < $1.index })
-                
+                let sorted = childIndex.children(prefix: prefix, parentId: parentLogicalId)
+
                 for (idx, child) in sorted.enumerated() {
                     var fk: Int64? = nil
                     if child.type == .leaf, let url = child.url {

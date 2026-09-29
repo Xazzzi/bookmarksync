@@ -15,6 +15,10 @@ extension SafariParser {
                 index: node.index
             )
         }
+
+        // Group siblings once; the recursive tree build below then does O(1)
+        // lookups instead of rescanning every node per folder.
+        let childIndex = BookmarkChildIndex(strippedNodes: strippedNodes)
         
         let data = try Data(contentsOf: filePath)
         var root = try PropertyListSerialization.propertyList(from: data, options: .mutableContainersAndLeaves, format: nil) as! [String: Any]
@@ -80,8 +84,7 @@ extension SafariParser {
         }
         
         func buildTree(prefix: String, parentId: String?) -> [[String: Any]] {
-            let childrenNodes = strippedNodes.filter { $0.id.starts(with: prefix + ":") && $0.parentId == parentId }
-            let sortedChildren = childrenNodes.sorted(by: { $0.index < $1.index })
+            let sortedChildren = childIndex.children(prefix: prefix, parentId: parentId)
             return sortedChildren.map { node in
                 var uuid = originalMapByTopologicalId[node.id]
                 if uuid == nil {

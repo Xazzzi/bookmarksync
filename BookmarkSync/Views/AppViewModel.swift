@@ -13,6 +13,18 @@ class AppViewModel: ObservableObject {
     @Published var isWritingEnabled: Bool = true
     @Published var latestBrowserNodes: [String: [String: BookmarkNode]] = [:]
 
+    /// Bumped whenever the sync engine commits bookmark changes.
+    ///
+    /// `@Model` instances compare by identity, so an in-place edit to a node's
+    /// title leaves the `@Query` array "equal" and cannot be detected with
+    /// `onChange(of:)`. Views observe this counter instead to know when their
+    /// cached projections are stale.
+    @Published var bookmarkDataRevision: Int = 0
+
+    func noteBookmarkDataChanged() {
+        bookmarkDataRevision &+= 1
+    }
+
     @Published var profileSets: [ProfileSet] = []
     @Published var selectedProfileSetId: String?
     @Published var isActivityFilterGlobal: Bool = true

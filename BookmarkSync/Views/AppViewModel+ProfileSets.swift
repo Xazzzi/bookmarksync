@@ -84,6 +84,8 @@ extension AppViewModel {
 
         try? context.save()
 
+        noteBookmarkDataChanged()
+
         // 4. Clear associated queue/diff history items
         diffHistory.removeAll { $0.profileSetId == id }
 
@@ -136,6 +138,7 @@ extension AppViewModel {
 
         if deletedCount > 0 {
             try? context.save()
+            noteBookmarkDataChanged()
             print("Cleaned \(deletedCount) orphaned nodes after profile disable.")
 
             // Clear pending writes for remaining configs so SyncEngine can rebuild diffs cleanly

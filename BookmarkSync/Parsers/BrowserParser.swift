@@ -53,3 +53,52 @@ extension BrowserParser {
         try fm.copyItem(at: filePath, to: backup1)
     }
 }
+
+/// Sibling index for writing out a bookmark tree.
+///
+/// Every writer needs "the children of parent P, in order", recursively. Doing
+/// that with `nodes.filter { $0.id.starts(with: prefix) && $0.parentId == p }`
+/// rescans the whole array — and runs a string prefix comparison — once per
+/// folder visited, which is O(N^2) and the dominant cost of a large write
+/// (~9M `starts(with:)` calls at 3k bookmarks).
+///
+/// This groups the nodes once up front so each lookup is a dictionary hit.
+struct BookmarkChildIndex {
+    /// Children of a given parent id, pre-sorted by `index`.
+    private var byParent: [String: [BookmarkNode]] = [:]
+    /// Root-level children (no parent), bucketed by root prefix and pre-sorted.
+    private var rootsByPrefix: [String: [BookmarkNode]] = [:]
+
+    /// - Parameter nodes: nodes with profile-set prefixes already stripped, so
+    ///   ids read as `<rootPrefix>:<path>`.
+    init(strippedNodes nodes: [BookmarkNode]) {
+        for node in nodes {
+            if let parentId = node.parentId, !parentId.isEmpty {
+                byParent[parentId, default: []].append(node)
+            } else if let prefix = node.id.split(separator: ":").first.map(String.init) {
+                rootsByPrefix[prefix, default: []].append(node)
+            }
+        }
+
+        for key in byParent.keys {
+            byParent[key]?.sort { $0.index < $1.index }
+        }
+        for key in rootsByPrefix.keys {
+            rootsByPrefix[key]?.sort { $0.index < $1.index }
+        }
+    }
+
+    /// Ordered children to write under `parentId`, or the roots of `prefix`
+    /// when `parentId` is nil.
+    ///
+    /// Mirrors the original predicate: a node is only considered under `prefix`
+    /// if its id carries that root prefix.
+    func children(prefix: String, parentId: String?) -> [BookmarkNode] {
+        guard let parentId, !parentId.isEmpty else {
+            return rootsByPrefix[prefix] ?? []
+        }
+        guard let candidates = byParent[parentId] else { return [] }
+        let idPrefix = prefix + ":"
+        return candidates.filter { $0.id.hasPrefix(idPrefix) }
+    }
+}
