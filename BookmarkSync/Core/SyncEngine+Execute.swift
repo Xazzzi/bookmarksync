@@ -503,10 +503,6 @@ extension SyncEngine {
                         try? modelContext.save()
                     }
                 }
-                
-                for config in activeConfigs {
-                    viewModel.recordSyncTime(for: config.id)
-                }
             }
             
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {

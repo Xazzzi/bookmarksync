@@ -215,6 +215,11 @@ struct BookmarksTreeView: View {
                     .lineLimit(1)
             }
             .padding(.vertical, 2)
+            // Claim the full row width before setting the hit area: a VStack is
+            // only as wide as its widest child, so with a short title and URL the
+            // tappable region ended partway across the sidebar and clicks to the
+            // right of the text did nothing.
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .listRowBackground(selectedId == item.id ? Color.accentColor : Color.clear)
             .foregroundColor(selectedId == item.id ? .white : .primary)

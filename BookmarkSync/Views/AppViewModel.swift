@@ -7,7 +7,6 @@ import SwiftData
 class AppViewModel: ObservableObject {
     @Published var syncStatus: String = "Idle"
     @Published var diffHistory: [DiffRecord] = []
-    @Published var lastSyncTimes: [String: Date] = [:]
     @Published var isFullDiskAccessGranted: Bool = true
     @Published var isWatchingEnabled: Bool = true
     @Published var isWritingEnabled: Bool = true
@@ -72,10 +71,6 @@ class AppViewModel: ObservableObject {
     }
 
 
-
-    func recordSyncTime(for configId: String) {
-        lastSyncTimes[configId] = Date()
-    }
 
     func rescanProfiles() {
         guard let context = modelContext else { return }

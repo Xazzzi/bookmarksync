@@ -175,7 +175,6 @@ struct TrayMenu: View {
                                                 config.isEnabled = true
                                                 config.lastSyncTime = nil
                                                 config.observedStateData = nil
-                                                viewModel.lastSyncTimes[config.id] = nil
                                                 viewModel.latestBrowserNodes[config.id] = nil
                                             } else {
                                                 config.profileSetId = nil
@@ -229,12 +228,6 @@ struct TrayMenu: View {
                                     }
 
                                     Spacer()
-
-                                    if let lastSync = config.lastSyncTime, Date().timeIntervalSince(lastSync) < 300 {
-                                        Circle()
-                                            .fill(Color.green)
-                                            .frame(width: 6, height: 6)
-                                    }
                                 }
                             }
                             .padding(.leading, 8)
