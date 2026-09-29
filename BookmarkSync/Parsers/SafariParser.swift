@@ -1,6 +1,6 @@
 import Foundation
 
-class SafariParser: BrowserParser {
+final class SafariParser: BrowserParser {
     let filePath: URL
     let profileName: String
     

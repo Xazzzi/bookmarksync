@@ -1,7 +1,7 @@
 import Foundation
 import SQLite
 
-class FirefoxParser: BrowserParser {
+final class FirefoxParser: BrowserParser {
     let filePath: URL
     
     init(filePath: URL) {

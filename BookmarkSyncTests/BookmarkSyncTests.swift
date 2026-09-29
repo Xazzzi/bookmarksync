@@ -890,3 +890,793 @@ final class SyncEngineIntegrationTests: XCTestCase {
         return try context.fetch(FetchDescriptor<BookmarkNode>()).count
     }
 }
+
+// MARK: - Deletion tombstoning (probe)
+
+final class ChromeDeletionProbeTests: XCTestCase {
+
+    private func fixture(bar: [(String, String)], synced: [(String, String)] = []) throws -> URL {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("Bookmarks_\(UUID().uuidString)")
+        func kids(_ items: [(String, String)], from: Int) -> [[String: Any]] {
+            items.enumerated().map { i, it in
+                ["id": "\(from + i)", "name": it.0, "type": "url", "url": it.1,
+                 "date_added": "13000000000000000", "date_modified": "13000000000000000"]
+            }
+        }
+        let root: [String: Any] = [
+            "version": 1, "checksum": "abc",
+            "roots": [
+                "bookmark_bar": ["id": "1", "name": "Bar", "type": "folder", "date_added": "13000000000000000", "children": kids(bar, from: 100)],
+                "other": ["id": "2", "name": "Other", "type": "folder", "date_added": "13000000000000000", "children": []],
+                "synced": ["id": "3", "name": "Synced", "type": "folder", "date_added": "13000000000000000", "children": kids(synced, from: 500)],
+            ],
+        ]
+        try JSONSerialization.data(withJSONObject: root, options: []).write(to: url)
+        return url
+    }
+
+    private func deletedFolderChildren(_ url: URL) throws -> [String] {
+        let json = try JSONSerialization.jsonObject(with: try Data(contentsOf: url)) as! [String: Any]
+        let roots = json["roots"] as! [String: Any]
+        let other = roots["other"] as! [String: Any]
+        let children = other["children"] as? [[String: Any]] ?? []
+        guard let folder = children.first(where: { ($0["name"] as? String) == "Deleted by BookmarkSync" }),
+              let kids = folder["children"] as? [[String: Any]] else { return [] }
+        return kids.compactMap { $0["name"] as? String }
+    }
+
+    private func syncedChildren(_ url: URL) throws -> [String] {
+        let json = try JSONSerialization.jsonObject(with: try Data(contentsOf: url)) as! [String: Any]
+        let roots = json["roots"] as! [String: Any]
+        let synced = roots["synced"] as! [String: Any]
+        return (synced["children"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
+    }
+
+    /// Removing a bookmark from the written tree should tombstone it.
+    func testRemovedBookmarkIsMovedToDeletedFolder() throws {
+        let url = try fixture(bar: [("Keep", "https://keep.com"), ("Gone", "https://gone.com")])
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parser = ChromeParser(filePath: url)
+        let all = try parser.read()
+        let survivors = all.filter { $0.title != "Gone" }
+        try parser.write(nodes: survivors)
+
+        XCTAssertEqual(try deletedFolderChildren(url), ["Gone"])
+    }
+
+    /// Synced-folder bookmarks must not be treated as deleted.
+    func testSyncedBookmarksAreNotFalselyTombstoned() throws {
+        let url = try fixture(
+            bar: [("Keep", "https://keep.com")],
+            synced: [("Mobile", "https://mobile.com")]
+        )
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parser = ChromeParser(filePath: url)
+        let all = try parser.read()
+        try parser.write(nodes: all)   // nothing removed
+
+        XCTAssertEqual(try syncedChildren(url), ["Mobile"], "Synced bookmark stays in synced")
+        XCTAssertEqual(try deletedFolderChildren(url), [], "Nothing was deleted, so no tombstones")
+    }
+
+    /// Repeated identical writes must not accumulate tombstones.
+    func testRepeatedWritesDoNotAccumulateTombstones() throws {
+        let url = try fixture(
+            bar: [("Keep", "https://keep.com")],
+            synced: [("Mobile", "https://mobile.com")]
+        )
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        for _ in 0..<3 {
+            let parser = ChromeParser(filePath: url)
+            let all = try parser.read()
+            try parser.write(nodes: all)
+        }
+
+        XCTAssertEqual(try deletedFolderChildren(url), [])
+    }
+
+    /// The resurrection half of the report: once a bookmark is tombstoned, a
+    /// subsequent read must not surface it as a live bookmark again.
+    func testTombstonedBookmarkIsNotReadBackAsLive() throws {
+        let url = try fixture(bar: [("Keep", "https://keep.com"), ("Gone", "https://gone.com")])
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parser = ChromeParser(filePath: url)
+        let survivors = try parser.read().filter { $0.title != "Gone" }
+        try parser.write(nodes: survivors)
+
+        XCTAssertEqual(try deletedFolderChildren(url), ["Gone"], "Precondition: it was tombstoned")
+
+        let reread = try parser.read()
+        XCTAssertFalse(
+            reread.contains { $0.title == "Gone" },
+            "A tombstoned bookmark must not reappear as live on re-read"
+        )
+        XCTAssertEqual(reread.map { $0.title }, ["Keep"])
+    }
+
+    /// A tombstoned bookmark must survive later writes rather than being dropped
+    /// (which would let a browser's cloud sync push it back).
+    func testTombstoneSurvivesSubsequentWrites() throws {
+        let url = try fixture(bar: [("Keep", "https://keep.com"), ("Gone", "https://gone.com")])
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parser = ChromeParser(filePath: url)
+        try parser.write(nodes: try parser.read().filter { $0.title != "Gone" })
+        XCTAssertEqual(try deletedFolderChildren(url), ["Gone"])
+
+        // Two further no-op sync cycles.
+        for _ in 0..<2 {
+            try parser.write(nodes: try parser.read())
+        }
+
+        XCTAssertEqual(
+            try deletedFolderChildren(url), ["Gone"],
+            "The tombstone is retained exactly once, not dropped and not duplicated"
+        )
+    }
+}
+
+// MARK: - Safari deletion tombstoning
+
+final class SafariDeletionTests: XCTestCase {
+
+    private func fixture(bar: [(String, String)]) throws -> URL {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("SafariBookmarks_\(UUID().uuidString).plist")
+        let kids: [[String: Any]] = bar.map { t, u in
+            ["Title": t, "WebBookmarkType": "WebBookmarkTypeLeaf",
+             "URLString": u, "WebBookmarkUUID": UUID().uuidString,
+             "URIDictionary": ["title": t]]
+        }
+        let root: [String: Any] = [
+            "Children": [
+                ["Title": "BookmarksBar", "WebBookmarkType": "WebBookmarkTypeList", "WebBookmarkUUID": UUID().uuidString, "Children": kids],
+                ["Title": "BookmarksMenu", "WebBookmarkType": "WebBookmarkTypeList", "WebBookmarkUUID": UUID().uuidString, "Children": [[String: Any]]()],
+            ],
+            "Title": "", "WebBookmarkFileVersion": 1,
+            "WebBookmarkType": "WebBookmarkTypeList", "WebBookmarkUUID": "ROOT",
+        ]
+        try PropertyListSerialization.data(fromPropertyList: root, format: .binary, options: 0).write(to: url)
+        return url
+    }
+
+    private func deletedFolderChildren(_ url: URL) throws -> [String] {
+        let plist = try PropertyListSerialization.propertyList(
+            from: try Data(contentsOf: url), options: [], format: nil
+        ) as! [String: Any]
+        let rootChildren = plist["Children"] as! [[String: Any]]
+        guard let menu = rootChildren.first(where: { ($0["Title"] as? String) == "BookmarksMenu" }),
+              let kids = menu["Children"] as? [[String: Any]],
+              let folder = kids.first(where: { ($0["Title"] as? String) == "Deleted by BookmarkSync" }),
+              let deleted = folder["Children"] as? [[String: Any]] else { return [] }
+        return deleted.compactMap { $0["Title"] as? String }
+    }
+
+    func testRemovedBookmarkIsTombstoned() throws {
+        let url = try fixture(bar: [("Keep", "https://keep.com"), ("Gone", "https://gone.com")])
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parser = SafariParser(filePath: url)
+        try parser.write(nodes: try parser.read().filter { $0.title != "Gone" })
+
+        XCTAssertEqual(try deletedFolderChildren(url), ["Gone"])
+    }
+
+    func testNoOpWritesDoNotAccumulateTombstones() throws {
+        let url = try fixture(bar: [("Keep", "https://keep.com")])
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parser = SafariParser(filePath: url)
+        for _ in 0..<3 {
+            try parser.write(nodes: try parser.read())
+        }
+
+        XCTAssertEqual(try deletedFolderChildren(url), [], "Nothing deleted, so no tombstones")
+    }
+
+    func testTombstoneIsNotDuplicatedAcrossWrites() throws {
+        let url = try fixture(bar: [("Keep", "https://keep.com"), ("Gone", "https://gone.com")])
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parser = SafariParser(filePath: url)
+        try parser.write(nodes: try parser.read().filter { $0.title != "Gone" })
+        for _ in 0..<2 {
+            try parser.write(nodes: try parser.read())
+        }
+
+        XCTAssertEqual(try deletedFolderChildren(url), ["Gone"], "Retained exactly once")
+    }
+}
+
+// MARK: - Chrome identity preservation (probe)
+
+final class ChromeIdentityProbeTests: XCTestCase {
+
+    /// Fixture mimicking a real signed-in Chrome file: lowercase canonical
+    /// guids, sync metadata, and a nested folder.
+    private func fixture() throws -> URL {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("Bookmarks_\(UUID().uuidString)")
+        let bar: [[String: Any]] = [
+            ["id": "100", "guid": "aaaaaaaa-1111-2222-3333-444444444444",
+             "name": "Alpha", "type": "url", "url": "https://alpha.com",
+             "date_added": "13000000000000000", "date_modified": "13000000000000000",
+             "meta_info": ["last_visited": "13000000000000000"],
+             "sync_transaction_version": "42"],
+            ["id": "101", "guid": "bbbbbbbb-1111-2222-3333-444444444444",
+             "name": "Folder", "type": "folder",
+             "date_added": "13000000000000000", "date_modified": "13000000000000000",
+             "children": [
+                ["id": "102", "guid": "cccccccc-1111-2222-3333-444444444444",
+                 "name": "Inner", "type": "url", "url": "https://inner.com",
+                 "date_added": "13000000000000000", "date_modified": "13000000000000000"],
+             ]],
+        ]
+        let root: [String: Any] = [
+            "version": 1, "checksum": "deadbeef",
+            "roots": [
+                "bookmark_bar": ["id": "1", "guid": "00000000-0000-4000-a000-000000000002", "name": "Bar", "type": "folder", "date_added": "13000000000000000", "children": bar],
+                "other": ["id": "2", "guid": "00000000-0000-4000-a000-000000000003", "name": "Other", "type": "folder", "date_added": "13000000000000000", "children": [[String: Any]]()],
+                "synced": ["id": "3", "guid": "00000000-0000-4000-a000-000000000004", "name": "Synced", "type": "folder", "date_added": "13000000000000000", "children": [[String: Any]]()],
+            ],
+        ]
+        try JSONSerialization.data(withJSONObject: root, options: []).write(to: url)
+        return url
+    }
+
+    private func barNodes(_ url: URL) throws -> [[String: Any]] {
+        let json = try JSONSerialization.jsonObject(with: try Data(contentsOf: url)) as! [String: Any]
+        let roots = json["roots"] as! [String: Any]
+        let bar = roots["bookmark_bar"] as! [String: Any]
+        return bar["children"] as? [[String: Any]] ?? []
+    }
+
+    /// A no-op sync must not change any bookmark's guid: Chrome keys its cloud
+    /// sync on guid, so a changed guid reads as a brand-new bookmark and the
+    /// original comes back down from the cloud as a duplicate.
+    func testNoOpWritePreservesGuids() throws {
+        let url = try fixture()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let before = try barNodes(url).compactMap { $0["guid"] as? String }
+        let parser = ChromeParser(filePath: url)
+        try parser.write(nodes: try parser.read())
+        let after = try barNodes(url).compactMap { $0["guid"] as? String }
+
+        XCTAssertEqual(after, before, "guids must survive a no-op write")
+    }
+
+    /// Guids Chrome writes are lowercase canonical UUIDs (verified against a real
+    /// profile: 149/149 lowercase). An uppercase guid reads to Chrome as an
+    /// unknown bookmark, so it keeps its cloud copy alongside ours -- the
+    /// reported duplication.
+    func testGeneratedGuidsAreLowercaseCanonical() throws {
+        let url = try fixture()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parser = ChromeParser(filePath: url)
+        var nodes = try parser.read()
+        nodes.append(ParsedBookmark(
+            id: "bookmark_bar:brandnew.com",
+            title: "Brand New",
+            url: "https://brandnew.com",
+            type: .leaf,
+            mtime: Date(),
+            index: 99
+        ))
+        try parser.write(nodes: nodes)
+
+        let guids = try barNodes(url).compactMap { $0["guid"] as? String }
+        for guid in guids {
+            XCTAssertEqual(guid, guid.lowercased(), "guid \(guid) must be lowercase")
+            XCTAssertNotNil(UUID(uuidString: guid), "guid \(guid) must be a valid UUID")
+        }
+    }
+
+    /// Round-tripping repeatedly must not multiply nodes. A `:dup1` id on read
+    /// means the file itself gained a duplicate.
+    func testRepeatedRoundTripsDoNotDuplicate() throws {
+        let url = try fixture()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parser = ChromeParser(filePath: url)
+        for _ in 0..<4 {
+            try parser.write(nodes: try parser.read())
+        }
+
+        let ids = try parser.read().map { $0.id }
+        XCTAssertFalse(ids.contains { $0.contains(":dup") }, "No duplicates: \(ids)")
+        XCTAssertEqual(ids.count, 3, "Alpha, Folder, Inner -- got \(ids)")
+    }
+
+    /// Sync metadata Chrome attached to a node must be preserved.
+    func testSyncMetadataIsPreserved() throws {
+        let url = try fixture()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parser = ChromeParser(filePath: url)
+        try parser.write(nodes: try parser.read())
+
+        let alpha = try barNodes(url).first { ($0["name"] as? String) == "Alpha" }
+        XCTAssertNotNil(alpha?["meta_info"], "meta_info must survive")
+        XCTAssertEqual(alpha?["sync_transaction_version"] as? String, "42")
+    }
+
+    /// Guids an earlier build wrote in uppercase must be repaired on the next
+    /// write, otherwise the duplication continues indefinitely.
+    func testExistingUppercaseGuidIsRepaired() throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("Bookmarks_\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let badGuid = "AAAAAAAA-1111-2222-3333-444444444444"
+        let root: [String: Any] = [
+            "version": 1,
+            "roots": [
+                "bookmark_bar": ["id": "1", "name": "Bar", "type": "folder", "date_added": "13000000000000000",
+                                 "children": [["id": "100", "guid": badGuid, "name": "Alpha", "type": "url",
+                                               "url": "https://alpha.com", "date_added": "13000000000000000"]]],
+                "other": ["id": "2", "name": "Other", "type": "folder", "date_added": "13000000000000000", "children": [[String: Any]]()],
+                "synced": ["id": "3", "name": "Synced", "type": "folder", "date_added": "13000000000000000", "children": [[String: Any]]()],
+            ],
+        ]
+        try JSONSerialization.data(withJSONObject: root, options: []).write(to: url)
+
+        let parser = ChromeParser(filePath: url)
+        try parser.write(nodes: try parser.read())
+
+        let json = try JSONSerialization.jsonObject(with: try Data(contentsOf: url)) as! [String: Any]
+        let roots = json["roots"] as! [String: Any]
+        let kids = ((roots["bookmark_bar"] as! [String: Any])["children"] as? [[String: Any]]) ?? []
+        XCTAssertEqual(kids.first?["guid"] as? String, badGuid.lowercased(),
+                       "An uppercase guid must be normalised, preserving the same UUID value")
+    }
+}
+
+// MARK: - Chrome identity across real edits
+
+final class ChromeEditIdentityTests: XCTestCase {
+
+    private func fixture(_ bar: [[String: Any]]) throws -> URL {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("Bookmarks_\(UUID().uuidString)")
+        let root: [String: Any] = [
+            "version": 1, "checksum": "deadbeef",
+            "roots": [
+                "bookmark_bar": ["id": "1", "guid": "00000000-0000-4000-a000-000000000002", "name": "Bar", "type": "folder", "date_added": "13000000000000000", "children": bar],
+                "other": ["id": "2", "guid": "00000000-0000-4000-a000-000000000003", "name": "Other", "type": "folder", "date_added": "13000000000000000", "children": [[String: Any]]()],
+                "synced": ["id": "3", "guid": "00000000-0000-4000-a000-000000000004", "name": "Synced", "type": "folder", "date_added": "13000000000000000", "children": [[String: Any]]()],
+            ],
+        ]
+        try JSONSerialization.data(withJSONObject: root, options: []).write(to: url)
+        return url
+    }
+
+    private func leaf(_ id: String, _ guid: String, _ name: String, _ url: String) -> [String: Any] {
+        ["id": id, "guid": guid, "name": name, "type": "url", "url": url,
+         "date_added": "13000000000000000", "date_modified": "13000000000000000"]
+    }
+
+    private func bar(_ url: URL) throws -> [[String: Any]] {
+        let json = try JSONSerialization.jsonObject(with: try Data(contentsOf: url)) as! [String: Any]
+        let roots = json["roots"] as! [String: Any]
+        return ((roots["bookmark_bar"] as! [String: Any])["children"] as? [[String: Any]]) ?? []
+    }
+
+    /// RENAME. The node's identity (id/guid) must be carried over, because the
+    /// engine's node id is derived from the URL and the title changed -- the
+    /// original lookup key no longer matches.
+    func testRenamePreservesGuid() throws {
+        let url = try fixture([leaf("100", "aaaaaaaa-1111-2222-3333-444444444444", "Old Name", "https://site.com")])
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parser = ChromeParser(filePath: url)
+        let renamed = try parser.read().map {
+            ParsedBookmark(id: $0.id, title: "New Name", url: $0.url, type: $0.type,
+                           parentId: $0.parentId, mtime: $0.mtime, index: $0.index)
+        }
+        try parser.write(nodes: renamed)
+
+        let nodes = try bar(url)
+        XCTAssertEqual(nodes.count, 1)
+        XCTAssertEqual(nodes.first?["name"] as? String, "New Name")
+        XCTAssertEqual(nodes.first?["guid"] as? String, "aaaaaaaa-1111-2222-3333-444444444444",
+                       "A rename must not mint a new guid -- Chrome would treat it as a new bookmark")
+    }
+
+    /// URL CHANGE. Same node, different URL: identity must still be preserved.
+    func testUrlChangePreservesGuid() throws {
+        let url = try fixture([leaf("100", "aaaaaaaa-1111-2222-3333-444444444444", "Site", "https://old.com")])
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parser = ChromeParser(filePath: url)
+        let original = try parser.read()
+        let changed = original.map {
+            ParsedBookmark(id: "bookmark_bar:new.com", title: $0.title, url: "https://new.com",
+                           type: $0.type, parentId: $0.parentId, mtime: $0.mtime, index: $0.index)
+        }
+        try parser.write(nodes: changed)
+
+        let nodes = try bar(url)
+        XCTAssertEqual(nodes.count, 1, "Should be one node, not the old one plus a new one")
+        XCTAssertEqual(nodes.first?["url"] as? String, "https://new.com")
+    }
+
+    /// REORDER. Moving bookmarks around must not disturb identity.
+    func testReorderPreservesAllGuids() throws {
+        let url = try fixture([
+            leaf("100", "aaaaaaaa-1111-2222-3333-444444444444", "First", "https://one.com"),
+            leaf("101", "bbbbbbbb-1111-2222-3333-444444444444", "Second", "https://two.com"),
+        ])
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parser = ChromeParser(filePath: url)
+        let reversed = try parser.read().map {
+            ParsedBookmark(id: $0.id, title: $0.title, url: $0.url, type: $0.type,
+                           parentId: $0.parentId, mtime: $0.mtime,
+                           index: $0.index == 0 ? 1 : 0)
+        }
+        try parser.write(nodes: reversed)
+
+        let nodes = try bar(url)
+        let guidByName = Dictionary(uniqueKeysWithValues: nodes.compactMap { n -> (String, String)? in
+            guard let name = n["name"] as? String, let g = n["guid"] as? String else { return nil }
+            return (name, g)
+        })
+        XCTAssertEqual(guidByName["First"], "aaaaaaaa-1111-2222-3333-444444444444")
+        XCTAssertEqual(guidByName["Second"], "bbbbbbbb-1111-2222-3333-444444444444")
+        XCTAssertEqual(nodes.first?["name"] as? String, "Second", "Order actually changed")
+    }
+
+    /// TWO BOOKMARKS, SAME URL, DIFFERENT TITLES -- a very common real-world
+    /// shape. Each must keep its own identity.
+    func testSameUrlDifferentTitlesKeepDistinctGuids() throws {
+        let url = try fixture([
+            leaf("100", "aaaaaaaa-1111-2222-3333-444444444444", "Docs Home", "https://example.com"),
+            leaf("101", "bbbbbbbb-1111-2222-3333-444444444444", "Example", "https://example.com"),
+        ])
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parser = ChromeParser(filePath: url)
+        let read = try parser.read()
+        XCTAssertEqual(read.count, 2, "Both must be read: \(read.map(\.id))")
+
+        try parser.write(nodes: read)
+
+        let nodes = try bar(url)
+        XCTAssertEqual(nodes.count, 2, "Both must survive the write")
+        let guids = Set(nodes.compactMap { $0["guid"] as? String })
+        XCTAssertEqual(guids.count, 2, "Distinct guids must stay distinct")
+        XCTAssertEqual(
+            guids,
+            ["aaaaaaaa-1111-2222-3333-444444444444", "bbbbbbbb-1111-2222-3333-444444444444"],
+            "Original guids must be preserved, not reassigned"
+        )
+    }
+}
+
+// MARK: - Safari UUID convention
+
+final class SafariUuidConventionTests: XCTestCase {
+
+    /// Safari's convention is the INVERSE of Chrome's: uppercase canonical,
+    /// verified against a real Bookmarks.plist. Writing lowercase here would
+    /// risk the same class of mismatch that Chrome's casing caused.
+    func testGeneratedUuidsAreUppercase() throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("SafariBookmarks_\(UUID().uuidString).plist")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let root: [String: Any] = [
+            "Children": [
+                ["Title": "BookmarksBar", "WebBookmarkType": "WebBookmarkTypeList", "WebBookmarkUUID": UUID().uuidString.uppercased(), "Children": [[String: Any]]()],
+                ["Title": "BookmarksMenu", "WebBookmarkType": "WebBookmarkTypeList", "WebBookmarkUUID": UUID().uuidString.uppercased(), "Children": [[String: Any]]()],
+            ],
+            "Title": "", "WebBookmarkFileVersion": 1,
+            "WebBookmarkType": "WebBookmarkTypeList", "WebBookmarkUUID": "ROOT",
+        ]
+        try PropertyListSerialization.data(fromPropertyList: root, format: .binary, options: 0).write(to: url)
+
+        let parser = SafariParser(filePath: url)
+        try parser.write(nodes: [
+            ParsedBookmark(id: "bookmark_bar:new.com", title: "New", url: "https://new.com",
+                           type: .leaf, mtime: Date(), index: 0)
+        ])
+
+        let plist = try PropertyListSerialization.propertyList(
+            from: try Data(contentsOf: url), options: [], format: nil
+        ) as! [String: Any]
+        let rootChildren = plist["Children"] as! [[String: Any]]
+        let bar = rootChildren.first { ($0["Title"] as? String) == "BookmarksBar" }!
+        let kids = bar["Children"] as! [[String: Any]]
+        let uuid = kids.first?["WebBookmarkUUID"] as? String
+
+        XCTAssertNotNil(uuid)
+        XCTAssertEqual(uuid, uuid?.uppercased(), "Safari UUIDs must be uppercase")
+        XCTAssertNotNil(UUID(uuidString: uuid ?? ""), "Must be a valid canonical UUID")
+    }
+}
+
+// MARK: - Chrome guid uniqueness
+
+final class ChromeGuidUniquenessTests: XCTestCase {
+
+    private func allGuids(_ url: URL) throws -> [String] {
+        let json = try JSONSerialization.jsonObject(with: try Data(contentsOf: url)) as! [String: Any]
+        let roots = json["roots"] as! [String: Any]
+        var out: [String] = []
+        func walk(_ n: [String: Any]) {
+            if let g = n["guid"] as? String { out.append(g) }
+            for c in (n["children"] as? [[String: Any]]) ?? [] { walk(c) }
+        }
+        for key in ["bookmark_bar", "other", "synced"] {
+            if let r = roots[key] as? [String: Any] {
+                for c in (r["children"] as? [[String: Any]]) ?? [] { walk(c) }
+            }
+        }
+        return out
+    }
+
+    /// Two bookmarks sharing a URL must not end up sharing a guid. Chrome
+    /// requires guids to be unique; a collision makes it discard or re-create
+    /// nodes, which surfaces as duplication.
+    func testTwoBookmarksSameUrlGetDistinctGuids() throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("Bookmarks_\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        // One original node; we will write TWO bookmarks with that same URL, so
+        // the writer's URL-based fallback could hand both the same original.
+        let root: [String: Any] = [
+            "version": 1,
+            "roots": [
+                "bookmark_bar": ["id": "1", "name": "Bar", "type": "folder", "date_added": "13000000000000000",
+                                 "children": [["id": "100", "guid": "aaaaaaaa-1111-2222-3333-444444444444",
+                                               "name": "Only", "type": "url", "url": "https://same.com",
+                                               "date_added": "13000000000000000"]]],
+                "other": ["id": "2", "name": "Other", "type": "folder", "date_added": "13000000000000000", "children": [[String: Any]]()],
+                "synced": ["id": "3", "name": "Synced", "type": "folder", "date_added": "13000000000000000", "children": [[String: Any]]()],
+            ],
+        ]
+        try JSONSerialization.data(withJSONObject: root, options: []).write(to: url)
+
+        let parser = ChromeParser(filePath: url)
+        try parser.write(nodes: [
+            ParsedBookmark(id: "bookmark_bar:same.com", title: "First", url: "https://same.com", type: .leaf, mtime: Date(), index: 0),
+            ParsedBookmark(id: "bookmark_bar:same.com:dup1", title: "Second", url: "https://same.com", type: .leaf, mtime: Date(), index: 1),
+        ])
+
+        let guids = try allGuids(url)
+        XCTAssertEqual(guids.count, Set(guids).count, "Duplicate guids written: \(guids)")
+    }
+
+    /// Same shape, for ids -- Chrome also requires unique numeric ids.
+    func testTwoBookmarksSameUrlGetDistinctIds() throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("Bookmarks_\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let root: [String: Any] = [
+            "version": 1,
+            "roots": [
+                "bookmark_bar": ["id": "1", "name": "Bar", "type": "folder", "date_added": "13000000000000000",
+                                 "children": [["id": "100", "guid": "aaaaaaaa-1111-2222-3333-444444444444",
+                                               "name": "Only", "type": "url", "url": "https://same.com",
+                                               "date_added": "13000000000000000"]]],
+                "other": ["id": "2", "name": "Other", "type": "folder", "date_added": "13000000000000000", "children": [[String: Any]]()],
+                "synced": ["id": "3", "name": "Synced", "type": "folder", "date_added": "13000000000000000", "children": [[String: Any]]()],
+            ],
+        ]
+        try JSONSerialization.data(withJSONObject: root, options: []).write(to: url)
+
+        let parser = ChromeParser(filePath: url)
+        try parser.write(nodes: [
+            ParsedBookmark(id: "bookmark_bar:same.com", title: "First", url: "https://same.com", type: .leaf, mtime: Date(), index: 0),
+            ParsedBookmark(id: "bookmark_bar:same.com:dup1", title: "Second", url: "https://same.com", type: .leaf, mtime: Date(), index: 1),
+        ])
+
+        let json = try JSONSerialization.jsonObject(with: try Data(contentsOf: url)) as! [String: Any]
+        let roots = json["roots"] as! [String: Any]
+        let kids = ((roots["bookmark_bar"] as! [String: Any])["children"] as? [[String: Any]]) ?? []
+        let ids = kids.compactMap { $0["id"] as? String }
+        XCTAssertEqual(ids.count, Set(ids).count, "Duplicate ids written: \(ids)")
+    }
+}
+
+// MARK: - Cross-browser URL identity matching (intended behaviour)
+
+final class ChromeUrlMatchingTests: XCTestCase {
+
+    private func write(_ bar: [[String: Any]]) throws -> URL {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("Bookmarks_\(UUID().uuidString)")
+        let root: [String: Any] = [
+            "version": 1,
+            "roots": [
+                "bookmark_bar": ["id": "1", "name": "Bar", "type": "folder", "date_added": "13000000000000000", "children": bar],
+                "other": ["id": "2", "name": "Other", "type": "folder", "date_added": "13000000000000000", "children": [[String: Any]]()],
+                "synced": ["id": "3", "name": "Synced", "type": "folder", "date_added": "13000000000000000", "children": [[String: Any]]()],
+            ],
+        ]
+        try JSONSerialization.data(withJSONObject: root, options: []).write(to: url)
+        return url
+    }
+
+    private func nodes(_ url: URL, _ root: String = "bookmark_bar") throws -> [[String: Any]] {
+        let json = try JSONSerialization.jsonObject(with: try Data(contentsOf: url)) as! [String: Any]
+        let roots = json["roots"] as! [String: Any]
+        return ((roots[root] as! [String: Any])["children"] as? [[String: Any]]) ?? []
+    }
+
+    /// THE INTENDED BEHAVIOUR: the same URL saved under a different name in
+    /// another browser must adopt the existing Chrome node's identity rather
+    /// than becoming a new bookmark.
+    func testDifferentNameSameUrlAdoptsExistingIdentity() throws {
+        let url = try write([[
+            "id": "100", "guid": "aaaaaaaa-1111-2222-3333-444444444444",
+            "name": "Chrome's Name", "type": "url", "url": "https://shared.com",
+            "date_added": "13000000000000000",
+        ]])
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parser = ChromeParser(filePath: url)
+        // Same URL at the same place, but the title another browser uses. Its
+        // topological id therefore differs from Chrome's original.
+        try parser.write(nodes: [
+            ParsedBookmark(id: "bookmark_bar:shared.com", title: "Safari's Name",
+                           url: "https://shared.com", type: .leaf, mtime: Date(), index: 0)
+        ])
+
+        let written = try nodes(url)
+        XCTAssertEqual(written.count, 1, "Must stay one bookmark, not duplicate")
+        XCTAssertEqual(written.first?["name"] as? String, "Safari's Name", "Name updated")
+        XCTAssertEqual(written.first?["guid"] as? String, "aaaaaaaa-1111-2222-3333-444444444444",
+                       "Identity adopted from the URL match -- this is the cross-browser merge")
+        XCTAssertEqual(written.first?["id"] as? String, "100")
+    }
+
+    /// Renaming inside a folder must also keep identity via the URL match.
+    func testRenameInsideFolderAdoptsIdentity() throws {
+        let url = try write([[
+            "id": "101", "guid": "bbbbbbbb-1111-2222-3333-444444444444",
+            "name": "Folder", "type": "folder", "date_added": "13000000000000000",
+            "children": [[
+                "id": "102", "guid": "cccccccc-1111-2222-3333-444444444444",
+                "name": "Old Inner", "type": "url", "url": "https://inner.com",
+                "date_added": "13000000000000000",
+            ]],
+        ]])
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parser = ChromeParser(filePath: url)
+        let folderId = "bookmark_bar:Folder"
+        try parser.write(nodes: [
+            ParsedBookmark(id: folderId, title: "Folder", url: nil, type: .folder, mtime: Date(), index: 0),
+            ParsedBookmark(id: "\(folderId):inner.com", title: "New Inner", url: "https://inner.com",
+                           type: .leaf, parentId: folderId, mtime: Date(), index: 0),
+        ])
+
+        let folder = try nodes(url).first { ($0["name"] as? String) == "Folder" }
+        let inner = (folder?["children"] as? [[String: Any]]) ?? []
+        XCTAssertEqual(inner.count, 1)
+        XCTAssertEqual(inner.first?["name"] as? String, "New Inner")
+        XCTAssertEqual(inner.first?["guid"] as? String, "cccccccc-1111-2222-3333-444444444444",
+                       "Identity preserved through a rename within the folder")
+    }
+
+    /// Scoping check: an unrelated bookmark that merely shares a URL in a
+    /// DIFFERENT folder must not have its identity stolen.
+    func testSameUrlInDifferentFolderDoesNotStealIdentity() throws {
+        let url = try write([
+            [
+                "id": "100", "guid": "aaaaaaaa-1111-2222-3333-444444444444",
+                "name": "At Root", "type": "url", "url": "https://shared.com",
+                "date_added": "13000000000000000",
+            ],
+            [
+                "id": "101", "guid": "bbbbbbbb-1111-2222-3333-444444444444",
+                "name": "Folder", "type": "folder", "date_added": "13000000000000000",
+                "children": [[String: Any]](),
+            ],
+        ])
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let parser = ChromeParser(filePath: url)
+        let folderId = "bookmark_bar:Folder"
+        // Keep the root bookmark AND add a same-URL bookmark inside the folder.
+        try parser.write(nodes: [
+            ParsedBookmark(id: "bookmark_bar:shared.com", title: "At Root", url: "https://shared.com",
+                           type: .leaf, mtime: Date(), index: 0),
+            ParsedBookmark(id: folderId, title: "Folder", url: nil, type: .folder, mtime: Date(), index: 1),
+            ParsedBookmark(id: "\(folderId):shared.com", title: "In Folder", url: "https://shared.com",
+                           type: .leaf, parentId: folderId, mtime: Date(), index: 0),
+        ])
+
+        let written = try nodes(url)
+        let atRoot = written.first { ($0["name"] as? String) == "At Root" }
+        XCTAssertEqual(atRoot?["guid"] as? String, "aaaaaaaa-1111-2222-3333-444444444444",
+                       "The root bookmark keeps its own identity")
+
+        // And every guid in the file is still unique.
+        var all: [String] = []
+        func walk(_ n: [String: Any]) {
+            if let g = n["guid"] as? String { all.append(g) }
+            for c in (n["children"] as? [[String: Any]]) ?? [] { walk(c) }
+        }
+        written.forEach(walk)
+        XCTAssertEqual(all.count, Set(all).count, "Guids must remain unique: \(all)")
+    }
+}
+
+// MARK: - Pre-existing duplicate siblings (regression from real-world data)
+
+final class ChromeDuplicateSiblingTests: XCTestCase {
+
+    /// A real profile was found holding 17 identical copies of one bookmark in
+    /// the same folder, accumulated by the id/guid-collision bug. Syncing such a
+    /// file must be stable: the copies keep distinct identities and no new ones
+    /// appear.
+    func testExistingDuplicateSiblingsDoNotMultiply() throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("Bookmarks_\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        // Seventeen siblings, same name and URL -- the observed real-world shape.
+        let copies: [[String: Any]] = (0..<17).map { i in
+            ["id": "\(200 + i)",
+             "guid": String(format: "aaaaaaaa-1111-2222-3333-%012d", i),
+             "name": "Plasticity - Product tour",
+             "type": "url",
+             "url": "https://www.plasticity.xyz/product",
+             "date_added": "13000000000000000"]
+        }
+        let root: [String: Any] = [
+            "version": 1,
+            "roots": [
+                "bookmark_bar": ["id": "1", "name": "Bar", "type": "folder", "date_added": "13000000000000000",
+                                 "children": [["id": "150", "guid": "bbbbbbbb-1111-2222-3333-444444444444",
+                                               "name": "Tools", "type": "folder",
+                                               "date_added": "13000000000000000", "children": copies]]],
+                "other": ["id": "2", "name": "Other", "type": "folder", "date_added": "13000000000000000", "children": [[String: Any]]()],
+                "synced": ["id": "3", "name": "Synced", "type": "folder", "date_added": "13000000000000000", "children": [[String: Any]]()],
+            ],
+        ]
+        try JSONSerialization.data(withJSONObject: root, options: []).write(to: url)
+
+        let parser = ChromeParser(filePath: url)
+        let before = try parser.read()
+        XCTAssertEqual(before.count, 18, "Folder plus 17 copies")
+
+        // Three no-op sync cycles.
+        for _ in 0..<3 {
+            try parser.write(nodes: try parser.read())
+        }
+
+        let after = try parser.read()
+        XCTAssertEqual(after.count, before.count, "Count must not grow: \(after.count) vs \(before.count)")
+
+        // Every id and guid in the written file must still be unique.
+        let json = try JSONSerialization.jsonObject(with: try Data(contentsOf: url)) as! [String: Any]
+        let roots = json["roots"] as! [String: Any]
+        var guids: [String] = []
+        var ids: [String] = []
+        func walk(_ n: [String: Any]) {
+            if let g = n["guid"] as? String { guids.append(g) }
+            if let i = n["id"] as? String { ids.append(i) }
+            for c in (n["children"] as? [[String: Any]]) ?? [] { walk(c) }
+        }
+        for key in ["bookmark_bar", "other", "synced"] {
+            if let r = roots[key] as? [String: Any] {
+                for c in (r["children"] as? [[String: Any]]) ?? [] { walk(c) }
+            }
+        }
+        XCTAssertEqual(guids.count, Set(guids).count, "Guids must stay unique across 17 identical siblings")
+        XCTAssertEqual(ids.count, Set(ids).count, "Ids must stay unique")
+        XCTAssertTrue(guids.allSatisfy { $0 == $0.lowercased() }, "All lowercase")
+    }
+}

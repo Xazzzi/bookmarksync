@@ -1,6 +1,17 @@
 import Foundation
 
 extension SafariParser {
+    /// A UUID in the form Safari itself writes: UPPERCASE canonical.
+    ///
+    /// The inverse of Chrome's convention -- verified against a real
+    /// Bookmarks.plist. `UUID().uuidString` is already uppercase on Apple
+    /// platforms, so this is a named assertion of that requirement rather than a
+    /// transformation: it keeps the intent explicit and survives anyone
+    /// "tidying" the two parsers to match each other.
+    private func newUuid() -> String {
+        UUID().uuidString.uppercased()
+    }
+
     func write(nodes: [ParsedBookmark]) throws {
         try performBackup()
         
@@ -51,7 +62,7 @@ extension SafariParser {
                 seenKeys[baseId] = count + 1
                 let uniqueId = count == 0 ? baseId : "\(baseId):dup\(count)"
                 
-                let uuid = node["WebBookmarkUUID"] as? String ?? UUID().uuidString
+                let uuid = node["WebBookmarkUUID"] as? String ?? newUuid()
                 originalNodesByUuid[uuid] = node
                 if let pUuid = parentUuid {
                     parentUuidMap[uuid] = pUuid
@@ -98,7 +109,7 @@ extension SafariParser {
                     }
                 }
                 
-                let finalUuid = uuid ?? UUID().uuidString
+                let finalUuid = uuid ?? newUuid()
                 usedUuids.insert(finalUuid)
                 
                 var dict: [String: Any] = [
@@ -136,7 +147,7 @@ extension SafariParser {
             var deletedFolder = existingDeletedFolder ?? [
                 "Title": "Deleted by BookmarkSync",
                 "WebBookmarkType": "WebBookmarkTypeList",
-                "WebBookmarkUUID": UUID().uuidString,
+                "WebBookmarkUUID": newUuid(),
                 "Children": [[String: Any]]()
             ]
             var deletedChildren = deletedFolder["Children"] as? [[String: Any]] ?? []
@@ -172,7 +183,7 @@ extension SafariParser {
                     "Title": profileName,
                     "WebBookmarkType": "WebBookmarkTypeList",
                     "Children": fBarChildren,
-                    "WebBookmarkUUID": UUID().uuidString
+                    "WebBookmarkUUID": newUuid()
                 ])
             }
         }
