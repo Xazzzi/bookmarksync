@@ -9,7 +9,7 @@ class WriteQueue {
     
     struct PendingWrite {
         let parser: BrowserParser
-        let nodes: [BookmarkNode]
+        let nodes: [ParsedBookmark]
         let bundleId: String
     }
     
@@ -38,7 +38,7 @@ class WriteQueue {
         )
     }
     
-    func enqueue(parser: BrowserParser, nodes: [BookmarkNode], bundleId: String) {
+    func enqueue(parser: BrowserParser, nodes: [ParsedBookmark], bundleId: String) {
         queueLock.lock()
         // Remove existing pending writes for the same file to prevent queue buildup
         queue.removeAll { $0.parser.filePath.path == parser.filePath.path }
@@ -70,7 +70,7 @@ class WriteQueue {
         for pending in queue {
             if runningApps.contains(pending.bundleId) {
                 // Browser is running, wait until it quits to safely write
-                print("WriteQueue: Waiting for \(pending.bundleId) to completely quit before writing...")
+                SyncLog.verbose("WriteQueue: waiting for \(pending.bundleId) to quit before writing")
                 remaining.append(pending)
             } else {
                 do {
@@ -78,14 +78,14 @@ class WriteQueue {
                     WriteQueue.lastWriteTimesLock.lock()
                     WriteQueue.lastWriteTimes[pending.parser.filePath.path] = Date()
                     WriteQueue.lastWriteTimesLock.unlock()
-                    print("Successfully wrote to \(pending.bundleId)")
+                    SyncLog.event("Wrote bookmarks to \(pending.bundleId)")
                     
                     DispatchQueue.main.async { [weak self, bundleId = pending.bundleId] in
                         self?.viewModel?.queueError = nil
                         self?.viewModel?.markBrowserSynced(bundleId: bundleId)
                     }
                 } catch {
-                    print("Write error for \(pending.bundleId): \(error)")
+                    SyncLog.error("Write failed for \(pending.bundleId): \(error)")
                     DispatchQueue.main.async { [weak self] in
                         self?.viewModel?.queueError = "Write error (\(pending.bundleId)): \(error.localizedDescription)"
                     }

@@ -52,8 +52,9 @@ final class BookmarkSyncTests: XCTestCase {
         // state: "was here last time, gone now" is what distinguishes a user
         // deletion from a profile that simply never had the bookmark. Without
         // this the deletion pass has nothing to iterate.
-        viewModel.latestBrowserNodes[c1.id] = [b1.id: b1]
-        viewModel.latestBrowserNodes[c2.id] = [b1.id: b1]
+        let observed = ParsedBookmark(id: b1.id, title: b1.title, url: b1.url, type: b1.type, parentId: b1.parentId, mtime: b1.mtime, index: b1.index)
+        viewModel.latestBrowserNodes[c1.id] = [b1.id: observed]
+        viewModel.latestBrowserNodes[c2.id] = [b1.id: observed]
         
         let (merged, _) = engine.merge(state: state, browsers: [chrome, safari], activeConfigs: [c1, c2])
         
@@ -116,7 +117,7 @@ final class BookmarkSyncTests: XCTestCase {
         XCTAssertTrue(nodes.first!.id.starts(with: "bookmark_bar:"))
         
         // 2. Write
-        let newNode = BookmarkNode(id: "bookmark_bar:https://apple.com", title: "Apple", url: "https://apple.com", type: .leaf, mtime: Date())
+        let newNode = ParsedBookmark(id: "bookmark_bar:https://apple.com", title: "Apple", url: "https://apple.com", type: .leaf, mtime: Date())
         try parser.write(nodes: [newNode])
         
         let updatedData = try Data(contentsOf: tempPlistURL)
@@ -179,7 +180,7 @@ final class BookmarkSyncTests: XCTestCase {
         
         // Write targeted update
         let parser = ChromeParser(filePath: tempJSONURL)
-        let newNode = BookmarkNode(id: "bookmark_bar:https://google.com", title: "Google", url: "https://google.com", type: .leaf, mtime: Date())
+        let newNode = ParsedBookmark(id: "bookmark_bar:https://google.com", title: "Google", url: "https://google.com", type: .leaf, mtime: Date())
         try parser.write(nodes: [newNode])
         
         // Validate
@@ -513,8 +514,8 @@ final class BookmarkTreeSnapshotTests: XCTestCase {
 
 final class BookmarkChildIndexTests: XCTestCase {
 
-    private func node(_ id: String, parent: String? = nil, index: Int, type: BookmarkType = .leaf) -> BookmarkNode {
-        BookmarkNode(
+    private func node(_ id: String, parent: String? = nil, index: Int, type: BookmarkType = .leaf) -> ParsedBookmark {
+        ParsedBookmark(
             id: id,
             title: id,
             url: type == .leaf ? "https://example.com/\(id)" : nil,
@@ -588,7 +589,7 @@ final class BookmarkChildIndexTests: XCTestCase {
     /// Equivalence check against the linear predicate the writers used before,
     /// over a tree large enough that the old form was the write bottleneck.
     func testMatchesLegacyFilterPredicateOnLargeTree() {
-        var nodes: [BookmarkNode] = []
+        var nodes: [ParsedBookmark] = []
         for f in 0..<30 {
             let folderId = "bookmark_bar:F\(f)"
             nodes.append(node(folderId, index: f, type: .folder))
@@ -599,7 +600,7 @@ final class BookmarkChildIndexTests: XCTestCase {
 
         let idx = BookmarkChildIndex(strippedNodes: nodes)
 
-        func legacy(prefix: String, parentId: String?) -> [BookmarkNode] {
+        func legacy(prefix: String, parentId: String?) -> [ParsedBookmark] {
             nodes.filter { $0.id.starts(with: prefix + ":") && $0.parentId == parentId }
                 .sorted(by: { $0.index < $1.index })
         }
@@ -625,77 +626,63 @@ final class BookmarkChildIndexTests: XCTestCase {
 
 final class DiffBatchingTests: XCTestCase {
 
+    /// Every change gets its own row: no sampling, no summary placeholder.
     @MainActor
-    func testBulkImportEmitsBoundedRowsWithSummary() {
+    func testEveryChangeGetsItsOwnRow() {
         let viewModel = AppViewModel()
-        let titles = (0..<SyncEngine.diffSampleLimit).map { "Add: Bookmark \($0)" }
+        let titles = (0..<3000).map { "Add: Bookmark \($0)" }
 
         viewModel.addDiffs(
             titles: titles,
-            totalCount: 3000,
             targetBundleId: "com.google.Chrome",
             targetProfileName: "Default",
             profileSetId: "S1"
         )
 
-        // The sample plus one summary row, not 3000 rows.
-        XCTAssertEqual(viewModel.diffHistory.count, SyncEngine.diffSampleLimit + 1)
-        XCTAssertEqual(
-            viewModel.diffHistory.last?.bookmarkTitle,
-            "+2980 more changes",
-            "The unsampled remainder is represented by a summary row"
+        XCTAssertEqual(viewModel.diffHistory.count, 3000)
+        XCTAssertFalse(
+            viewModel.diffHistory.contains { $0.bookmarkTitle.hasPrefix("+") },
+            "No summary placeholder rows"
         )
+        XCTAssertEqual(viewModel.diffHistory.first?.bookmarkTitle, "Add: Bookmark 0")
     }
 
+    /// The reported bug: repeated syncs must not keep appending rows for state
+    /// that is already pending.
     @MainActor
-    func testNoSummaryRowWhenSampleCoversEverything() {
+    func testRepeatedSyncDoesNotGrowTheFeed() {
         let viewModel = AppViewModel()
+        let titles = (0..<50).map { "Add: Bookmark \($0)" }
 
-        viewModel.addDiffs(
-            titles: ["Add: One", "Add: Two"],
-            totalCount: 2,
-            targetBundleId: "com.apple.Safari",
-            targetProfileName: "Default",
-            profileSetId: "S1"
-        )
-
-        XCTAssertEqual(viewModel.diffHistory.count, 2)
-        XCTAssertFalse(viewModel.diffHistory.contains { $0.bookmarkTitle.hasPrefix("+") })
-    }
-
-    @MainActor
-    func testSingularRemainderWording() {
-        let viewModel = AppViewModel()
-
-        viewModel.addDiffs(
-            titles: ["Add: One"],
-            totalCount: 2,
-            targetBundleId: "com.apple.Safari",
-            targetProfileName: "Default",
-            profileSetId: "S1"
-        )
-
-        XCTAssertEqual(viewModel.diffHistory.last?.bookmarkTitle, "+1 more change")
-    }
-
-    @MainActor
-    func testHistoryIsCapped() {
-        let viewModel = AppViewModel()
-
-        // Far more distinct changes than the cap allows, across several syncs.
-        for batch in 0..<30 {
-            let titles = (0..<20).map { "Add: B\(batch)-\($0)" }
+        for _ in 0..<5 {
             viewModel.addDiffs(
                 titles: titles,
-                totalCount: titles.count,
                 targetBundleId: "com.google.Chrome",
                 targetProfileName: "Default",
                 profileSetId: "S1"
             )
         }
 
-        XCTAssertLessThanOrEqual(viewModel.diffHistory.count, AppViewModel.diffHistoryLimit)
-        XCTAssertEqual(viewModel.diffHistory.first?.bookmarkTitle, "Add: B29-0", "Most recent batch stays at the top")
+        XCTAssertEqual(viewModel.diffHistory.count, 50, "Re-syncing the same changes adds nothing")
+    }
+
+    @MainActor
+    func testHistoryIsCapped() {
+        let viewModel = AppViewModel()
+
+        // More distinct changes than the cap allows, across several syncs.
+        for batch in 0..<60 {
+            let titles = (0..<100).map { "Add: B\(batch)-\($0)" }
+            viewModel.addDiffs(
+                titles: titles,
+                targetBundleId: "com.google.Chrome",
+                targetProfileName: "Default",
+                profileSetId: "S1"
+            )
+        }
+
+        XCTAssertEqual(viewModel.diffHistory.count, AppViewModel.diffHistoryLimit)
+        XCTAssertEqual(viewModel.diffHistory.first?.bookmarkTitle, "Add: B59-0", "Most recent batch stays at the top")
     }
 
     @MainActor
@@ -705,7 +692,6 @@ final class DiffBatchingTests: XCTestCase {
         for _ in 0..<3 {
             viewModel.addDiffs(
                 titles: ["Add: Same"],
-                totalCount: 1,
                 targetBundleId: "com.google.Chrome",
                 targetProfileName: "Default",
                 profileSetId: "S1"
@@ -721,7 +707,6 @@ final class DiffBatchingTests: XCTestCase {
 
         viewModel.addDiffs(
             titles: ["Add: Keep", "Update: Drop", "Delete: AlsoDrop"],
-            totalCount: 3,
             targetBundleId: "com.google.Chrome",
             targetProfileName: "Default",
             profileSetId: "S1"
@@ -751,7 +736,6 @@ final class DiffBatchingTests: XCTestCase {
 
         viewModel.addDiffs(
             titles: ["Add: Real"],
-            totalCount: 1,
             targetBundleId: "com.google.Chrome",
             targetProfileName: "Default",
             profileSetId: "S1"
@@ -759,5 +743,150 @@ final class DiffBatchingTests: XCTestCase {
 
         XCTAssertEqual(viewModel.diffHistory.map { $0.bookmarkTitle }, ["Add: Real"],
                        "A concrete change replaces the pending Reorder for that target")
+    }
+}
+
+// MARK: - End-to-end sync (async read path)
+
+final class SyncEngineIntegrationTests: XCTestCase {
+
+    /// Writes a minimal Chrome bookmarks file with `count` bookmarks on the bar.
+    private func writeChromeFixture(count: Int) throws -> URL {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("Bookmarks_\(UUID().uuidString)")
+
+        let children = (0..<count).map { i -> [String: Any] in
+            [
+                "id": "\(100 + i)",
+                "name": "Bookmark \(i)",
+                "type": "url",
+                "url": "https://example.com/\(i)",
+                "date_added": "13000000000000000",
+                "date_modified": "13000000000000000",
+            ]
+        }
+        let root: [String: Any] = [
+            "version": 1,
+            "checksum": "abc",
+            "roots": [
+                "bookmark_bar": ["id": "1", "name": "Bookmarks bar", "type": "folder", "date_added": "13000000000000000", "children": children],
+                "other": ["id": "2", "name": "Other", "type": "folder", "date_added": "13000000000000000", "children": []],
+                "synced": ["id": "3", "name": "Synced", "type": "folder", "date_added": "13000000000000000", "children": []],
+            ],
+        ]
+        try JSONSerialization.data(withJSONObject: root, options: []).write(to: url)
+        return url
+    }
+
+    /// Drives a full sync through the real async read path and asserts the hub
+    /// ends up populated. Guards the restructure that moved parsing off the main
+    /// actor: a regression there shows up as an empty or partial import.
+    @MainActor
+    func testSyncImportsBookmarksThroughAsyncReadPath() async throws {
+        let fixture = try writeChromeFixture(count: 250)
+        defer { try? FileManager.default.removeItem(at: fixture) }
+
+        let schema = Schema([BookmarkNode.self, BrowserConfig.self, ProfileSet.self])
+        let container = try ModelContainer(
+            for: schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        let context = container.mainContext
+
+        let profileSet = ProfileSet(name: "Set 1")
+        context.insert(profileSet)
+
+        let config = BrowserConfig(
+            id: "com.google.Chrome:Default",
+            bundleId: "com.google.Chrome",
+            browserName: "Google Chrome",
+            profileName: "Default",
+            bookmarkFilePath: fixture.path,
+            isEnabled: true,
+            profileSetId: profileSet.id
+        )
+        context.insert(config)
+        try context.save()
+
+        let viewModel = AppViewModel()
+        viewModel.modelContext = context
+        // Keep the test off the real filesystem for writes.
+        viewModel.syncState = .readOnly
+
+        let engine = SyncEngine(modelContext: context, viewModel: viewModel)
+        viewModel.syncEngine = engine
+
+        engine.triggerSync(changedPaths: [], forceImmediate: true)
+
+        // The read happens in a detached task; wait for the hub to populate.
+        let imported = try await waitForNodes(in: context, timeout: 5.0)
+
+        XCTAssertEqual(imported, 250, "All fixture bookmarks should reach the hub")
+
+        let nodes = try context.fetch(FetchDescriptor<BookmarkNode>())
+        XCTAssertTrue(
+            nodes.allSatisfy { $0.profileSetId == profileSet.id },
+            "Imported nodes must be namespaced to the profile set"
+        )
+        XCTAssertTrue(
+            nodes.allSatisfy { $0.id.hasPrefix("\(profileSet.id):") },
+            "Ids must carry the profile-set prefix applied during the background read"
+        )
+    }
+
+    /// A sync requested while one is in flight must still run, not be dropped.
+    @MainActor
+    func testOverlappingSyncRequestIsHonoured() async throws {
+        let fixture = try writeChromeFixture(count: 10)
+        defer { try? FileManager.default.removeItem(at: fixture) }
+
+        let schema = Schema([BookmarkNode.self, BrowserConfig.self, ProfileSet.self])
+        let container = try ModelContainer(
+            for: schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        let context = container.mainContext
+
+        let profileSet = ProfileSet(name: "Set 1")
+        context.insert(profileSet)
+        let config = BrowserConfig(
+            id: "com.google.Chrome:Default",
+            bundleId: "com.google.Chrome",
+            browserName: "Google Chrome",
+            profileName: "Default",
+            bookmarkFilePath: fixture.path,
+            isEnabled: true,
+            profileSetId: profileSet.id
+        )
+        context.insert(config)
+        try context.save()
+
+        let viewModel = AppViewModel()
+        viewModel.modelContext = context
+        viewModel.syncState = .readOnly
+        let engine = SyncEngine(modelContext: context, viewModel: viewModel)
+        viewModel.syncEngine = engine
+
+        // Second call lands while the first is still reading, with no paths --
+        // exactly the shape of a "force immediate" rescan.
+        engine.triggerSync(changedPaths: [], forceImmediate: true)
+        engine.triggerSync(changedPaths: [], forceImmediate: true)
+
+        let imported = try await waitForNodes(in: context, timeout: 5.0)
+        XCTAssertEqual(imported, 10)
+        XCTAssertFalse(engine.hasPendingSync, "The coalesced request must be drained, not left pending")
+    }
+
+    private func waitForNodes(
+        in context: ModelContext,
+        timeout: TimeInterval
+    ) async throws -> Int {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let count = try context.fetch(FetchDescriptor<BookmarkNode>()).count
+            if count > 0 { return count }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return try context.fetch(FetchDescriptor<BookmarkNode>()).count
     }
 }

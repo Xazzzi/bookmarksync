@@ -8,7 +8,7 @@ class FirefoxParser: BrowserParser {
         self.filePath = filePath
     }
     
-    func read() throws -> [BookmarkNode] {
+    func read() throws -> [ParsedBookmark] {
         let tempDir = FileManager.default.temporaryDirectory
         let tempId = UUID().uuidString
         let tempDbPath = tempDir.appendingPathComponent("\(tempId)_places.sqlite")
@@ -46,7 +46,7 @@ class FirefoxParser: BrowserParser {
         let p_url = Expression<String?>("url")
         let p_title = Expression<String?>("title") // Added to get fallback title
         
-        var result: [BookmarkNode] = []
+        var result: [ParsedBookmark] = []
         var idToPrefix: [Int64: String] = [:]
         
         idToPrefix[3] = "bookmark_bar"
@@ -145,7 +145,7 @@ class FirefoxParser: BrowserParser {
                 parentUniqueId = getPath(for: parent)
             }
             
-            let bNode = BookmarkNode(
+            let bNode = ParsedBookmark(
                 id: uniqueId,
                 title: title,
                 url: url,
@@ -201,11 +201,11 @@ class FirefoxParser: BrowserParser {
         return try db.run(insert)
     }
     
-    func write(nodes: [BookmarkNode]) throws {
+    func write(nodes: [ParsedBookmark]) throws {
         try performBackup()
         
         let strippedNodes = nodes.map { node in
-            BookmarkNode(
+            ParsedBookmark(
                 id: stripProfileSetPrefix(node.id),
                 title: node.title,
                 url: node.url,

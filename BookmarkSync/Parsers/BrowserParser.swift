@@ -1,9 +1,14 @@
 import Foundation
 
-protocol BrowserParser {
+/// Reads and writes one browser profile's bookmark storage.
+///
+/// Conformers must be safe to use off the main actor: `read` and `write` do file
+/// I/O and are deliberately kept free of SwiftData `@Model` types so the sync
+/// engine can run them on a background executor.
+protocol BrowserParser: Sendable {
     var filePath: URL { get }
-    func read() throws -> [BookmarkNode]
-    func write(nodes: [BookmarkNode]) throws
+    func read() throws -> [ParsedBookmark]
+    func write(nodes: [ParsedBookmark]) throws
 }
 
 extension BrowserParser {
@@ -65,13 +70,13 @@ extension BrowserParser {
 /// This groups the nodes once up front so each lookup is a dictionary hit.
 struct BookmarkChildIndex {
     /// Children of a given parent id, pre-sorted by `index`.
-    private var byParent: [String: [BookmarkNode]] = [:]
+    private var byParent: [String: [ParsedBookmark]] = [:]
     /// Root-level children (no parent), bucketed by root prefix and pre-sorted.
-    private var rootsByPrefix: [String: [BookmarkNode]] = [:]
+    private var rootsByPrefix: [String: [ParsedBookmark]] = [:]
 
     /// - Parameter nodes: nodes with profile-set prefixes already stripped, so
     ///   ids read as `<rootPrefix>:<path>`.
-    init(strippedNodes nodes: [BookmarkNode]) {
+    init(strippedNodes nodes: [ParsedBookmark]) {
         for node in nodes {
             if let parentId = node.parentId, !parentId.isEmpty {
                 byParent[parentId, default: []].append(node)
@@ -93,7 +98,7 @@ struct BookmarkChildIndex {
     ///
     /// Mirrors the original predicate: a node is only considered under `prefix`
     /// if its id carries that root prefix.
-    func children(prefix: String, parentId: String?) -> [BookmarkNode] {
+    func children(prefix: String, parentId: String?) -> [ParsedBookmark] {
         guard let parentId, !parentId.isEmpty else {
             return rootsByPrefix[prefix] ?? []
         }

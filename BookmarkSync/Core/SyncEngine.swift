@@ -3,14 +3,18 @@ import SwiftData
 
 @MainActor
 class SyncEngine {
-    /// Upper bound on individual bookmark titles recorded in the activity feed
-    /// per profile, per sync. Beyond this a single summary row is added instead.
-    static let diffSampleLimit = 20
-
     private static var watcher: FileWatcher?
     let modelContext: ModelContext
     let viewModel: AppViewModel
     private var debounceItem: DispatchWorkItem?
+    /// True while a sync's background read is in flight.
+    var isSyncing = false
+    /// Set when a sync is requested while one is already running, so the request
+    /// is honoured once the in-flight pass finishes. Tracked separately from the
+    /// paths below because a full rescan carries no paths at all.
+    var hasPendingSync = false
+    /// Paths that changed while a sync was running, coalesced into the next pass.
+    var pendingSyncPaths: Set<String> = []
     
     init(modelContext: ModelContext, viewModel: AppViewModel) {
         self.modelContext = modelContext

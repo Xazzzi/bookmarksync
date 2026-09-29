@@ -1,90 +1,168 @@
 import Foundation
 import SwiftData
 
+/// What one profile's storage contained, as read off the main actor.
+private struct ProfileRead: Sendable {
+    let configId: String
+    let parser: BrowserParser
+    let nodes: [ParsedBookmark]
+}
+
+/// Reads every requested profile's bookmark file. Free of SwiftData and of the
+/// main actor: file I/O, JSON/plist decoding and Firefox's SQLite copy+query all
+/// happen here so they never stall the UI.
+private func readProfiles(_ requests: [(configId: String, bundleId: String, profileName: String, path: String, setId: String)]) async -> [ProfileRead] {
+    // The entire point of this function is to keep parsing off the UI thread.
+    // Whether it does depends on subtle isolation rules (a nonisolated async
+    // function does not inherit its caller's actor), so assert it rather than
+    // assume it: if a future change re-isolates this to the main actor, debug
+    // runs and the test suite fail loudly instead of silently regressing.
+    dispatchPrecondition(condition: .notOnQueue(.main))
+
+    return await withTaskGroup(of: ProfileRead?.self) { group in
+        for request in requests {
+            group.addTask {
+                let url = URL(fileURLWithPath: request.path)
+                let parser: BrowserParser
+                switch request.bundleId {
+                case "com.apple.Safari":
+                    parser = SafariParser(filePath: url, profileName: request.profileName)
+                case "org.mozilla.firefox":
+                    parser = FirefoxParser(filePath: url)
+                default:
+                    parser = ChromeParser(filePath: url)
+                }
+
+                do {
+                    let raw = try parser.read()
+                    // Namespace ids to the profile set while we are still off-main.
+                    let prefixed = raw.map { node in
+                        ParsedBookmark(
+                            id: "\(request.setId):\(node.id)",
+                            title: node.title,
+                            url: node.url,
+                            type: node.type,
+                            parentId: node.parentId.map { "\(request.setId):\($0)" },
+                            mtime: node.mtime,
+                            index: node.index
+                        )
+                    }
+                    return ProfileRead(configId: request.configId, parser: parser, nodes: prefixed)
+                } catch {
+                    SyncLog.error("Failed to read \(request.bundleId) (\(request.profileName)) - skipping: \(error)")
+                    return nil
+                }
+            }
+        }
+
+        var results: [ProfileRead] = []
+        for await case let read? in group {
+            results.append(read)
+        }
+        return results
+    }
+}
+
 extension SyncEngine {
+    /// Entry point. Gathers what needs reading on the main actor, performs the
+    /// reads in the background, then applies the result back on the main actor.
     func executeSync(changedPaths: [String]) {
+        guard !isSyncing else {
+            // A sync is already in flight; coalesce into it rather than
+            // interleaving two passes over the same store. The flag is set
+            // unconditionally: a full rescan arrives with no paths, so an empty
+            // `changedPaths` must still schedule a follow-up pass.
+            hasPendingSync = true
+            pendingSyncPaths.formUnion(changedPaths)
+            return
+        }
+
         viewModel.syncStatus = "Syncing..."
-        
+
+        let allConfigs = (try? modelContext.fetch(FetchDescriptor<BrowserConfig>())) ?? []
+        let enabledConfigs = allConfigs.filter { $0.isEnabled && $0.profileSetId != nil && !$0.profileSetId!.isEmpty }
+
+        updateWatcher(activeConfigs: enabledConfigs)
+
+        guard !enabledConfigs.isEmpty else {
+            viewModel.syncStatus = "Idle"
+            return
+        }
+
+        let requests = enabledConfigs.compactMap { config -> (configId: String, bundleId: String, profileName: String, path: String, setId: String)? in
+            if config.bundleId == "com.apple.Safari" && !viewModel.isFullDiskAccessGranted {
+                SyncLog.event("Skipping Safari sync: Full Disk Access not granted")
+                return nil
+            }
+            return (config.id, config.bundleId, config.profileName, config.bookmarkFilePath, config.profileSetId!)
+        }
+
+        isSyncing = true
+        Task { [weak self] in
+            let reads = await readProfiles(requests)
+            guard let self else { return }
+            // No `await`: this Task inherits the engine's main-actor isolation,
+            // which is exactly where the SwiftData work below belongs. Only the
+            // read above hops off the main thread.
+            self.applySync(changedPaths: changedPaths, reads: reads)
+        }
+    }
+
+    /// Applies already-parsed browser state to the hub and queues any writes.
+    /// Runs on the main actor because everything here touches SwiftData.
+    private func applySync(changedPaths: [String], reads: [ProfileRead]) {
+        defer {
+            isSyncing = false
+            // Drain any sync request that arrived while this one was reading.
+            if hasPendingSync {
+                let queued = Array(pendingSyncPaths)
+                hasPendingSync = false
+                pendingSyncPaths.removeAll()
+                triggerSync(changedPaths: queued)
+            }
+        }
+
         do {
             let allConfigs = try modelContext.fetch(FetchDescriptor<BrowserConfig>())
             let enabledConfigs = allConfigs.filter { $0.isEnabled && $0.profileSetId != nil && !$0.profileSetId!.isEmpty }
-            
-            updateWatcher(activeConfigs: enabledConfigs)
-            
-            if enabledConfigs.isEmpty {
+
+            guard !enabledConfigs.isEmpty else {
                 viewModel.syncStatus = "Idle"
                 return
             }
-            
+
+            let readsByConfig = Dictionary(reads.map { ($0.configId, $0) }, uniquingKeysWith: { first, _ in first })
             let configsBySet = Dictionary(grouping: enabledConfigs, by: { $0.profileSetId! })
             let allStateNodes = try modelContext.fetch(FetchDescriptor<BookmarkNode>())
-            
+
             for (currentSetId, activeConfigs) in configsBySet {
-                var configCurrentNodes: [String: [BookmarkNode]] = [:]
+                var configCurrentNodes: [String: [ParsedBookmark]] = [:]
                 var configParsers: [String: BrowserParser] = [:]
-                
+
                 for config in activeConfigs {
-                    if config.bundleId == "com.apple.Safari" && !viewModel.isFullDiskAccessGranted {
-                        SyncLog.event("Skipping Safari sync: Full Disk Access not granted")
-                        continue
-                    }
-                    
-                    let url = URL(fileURLWithPath: config.bookmarkFilePath)
-                    var parser: BrowserParser?
-                    if config.bundleId == "com.apple.Safari" {
-                        parser = SafariParser(filePath: url, profileName: config.profileName)
-                    } else if config.bundleId == "org.mozilla.firefox" {
-                        parser = FirefoxParser(filePath: url)
-                    } else {
-                        parser = ChromeParser(filePath: url)
-                    }
-                    
-                    if let parser = parser {
-                        configParsers[config.id] = parser
-                        
-                        let rawNodes: [BookmarkNode]
-                        do {
-                            rawNodes = try parser.read()
-                        } catch {
-                            SyncLog.error("Failed to read \(config.browserName) (\(config.profileName)) - skipping: \(error)")
-                            continue
-                        }
-                        
-                        let mappedNodes = rawNodes.map { rawNode in
-                            BookmarkNode(
-                                id: "\(currentSetId):\(rawNode.id)",
-                                title: rawNode.title,
-                                url: rawNode.url,
-                                type: rawNode.type,
-                                parentId: rawNode.parentId != nil ? "\(currentSetId):\(rawNode.parentId!)" : nil,
-                                mtime: rawNode.mtime,
-                                profileSetId: currentSetId,
-                                index: rawNode.index
-                            )
-                        }
-                        configCurrentNodes[config.id] = mappedNodes
-                    }
+                    guard let read = readsByConfig[config.id] else { continue }
+                    configParsers[config.id] = read.parser
+                    configCurrentNodes[config.id] = read.nodes
                 }
                 
                 let stateNodes = allStateNodes.filter { $0.profileSetId == currentSetId }
                 
                 // Populate previousLatestNodes from viewModel cache or fallback to observedStateData
-                var previousLatestNodes: [String: [String: BookmarkNode]] = [:]
+                var previousLatestNodes: [String: [String: ParsedBookmark]] = [:]
                 for config in activeConfigs {
                     if let cached = viewModel.latestBrowserNodes[config.id] {
                         previousLatestNodes[config.id] = cached
                     } else if let data = config.observedStateData,
                               let decoded = try? JSONDecoder().decode([String: BookmarkNodeRecord].self, from: data) {
-                        var nodeMap: [String: BookmarkNode] = [:]
+                        var nodeMap: [String: ParsedBookmark] = [:]
                         for (id, record) in decoded {
-                            nodeMap[id] = BookmarkNode(
+                            nodeMap[id] = ParsedBookmark(
                                 id: id,
                                 title: record.title,
                                 url: record.url,
                                 type: record.type,
                                 parentId: record.parentId,
                                 mtime: Date(),
-                                profileSetId: currentSetId,
                                 index: record.index ?? 0
                             )
                         }
@@ -309,28 +387,21 @@ extension SyncEngine {
                 /// The nodes handed to the write queue. Detached value copies are
                 /// made at most once per set (not once per profile) and only when
                 /// some profile actually needs a write.
-                var cleanNodesForWrite: [BookmarkNode]?
+                var cleanNodesForWrite: [ParsedBookmark]?
 
                 for config in activeConfigs {
                     guard let currentNodes = configCurrentNodes[config.id] else { continue }
                     let currentDict = Dictionary(currentNodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
-                    // Only a bounded sample of titles is retained for the activity
-                    // feed; `changeCount` still reflects the true total. Emitting one
-                    // DiffRecord per bookmark meant 3000 records on a first import,
-                    // each triggering a full scan of the diff history and a separate
-                    // SwiftUI invalidation pass.
-                    var sampleTitles: [String] = []
-                    var changeCount = 0
+                    // One activity row per change, collected here and published in
+                    // a single mutation below rather than one at a time.
+                    var changeTitles: [String] = []
                     var needsReorder = false
                     var suppressedDeletions = 0
 
                     @inline(__always)
-                    func noteChange(_ title: @autoclosure () -> String) {
-                        changeCount += 1
-                        if sampleTitles.count < Self.diffSampleLimit {
-                            sampleTitles.append(title())
-                        }
+                    func noteChange(_ title: String) {
+                        changeTitles.append(title)
                     }
 
                     for (id, stateNode) in stateDict {
@@ -360,14 +431,13 @@ extension SyncEngine {
                         SyncLog.event("[Export] \(config.browserName) (\(config.profileName)) newly added - keeping \(suppressedDeletions) local item(s) instead of deleting")
                     }
 
-                    let hasMismatch = changeCount > 0
+                    let hasMismatch = !changeTitles.isEmpty
 
                     if hasMismatch || needsReorder {
                         if hasMismatch {
-                            SyncLog.event("[Export] \(config.browserName) (\(config.profileName)) out of sync. Changes: \(changeCount)")
+                            SyncLog.event("[Export] \(config.browserName) (\(config.profileName)) out of sync. Changes: \(changeTitles.count)")
                             viewModel.addDiffs(
-                                titles: sampleTitles,
-                                totalCount: changeCount,
+                                titles: changeTitles,
                                 targetBundleId: config.bundleId,
                                 targetProfileName: config.profileName,
                                 profileSetId: currentSetId
@@ -389,14 +459,13 @@ extension SyncEngine {
                         if viewModel.isWritingEnabled, let parser = configParsers[config.id] {
                             if cleanNodesForWrite == nil {
                                 cleanNodesForWrite = updatedStateNodes.map { node in
-                                    BookmarkNode(
+                                    ParsedBookmark(
                                         id: node.id,
                                         title: node.title,
                                         url: node.url,
                                         type: node.type,
                                         parentId: node.parentId,
                                         mtime: node.mtime,
-                                        profileSetId: currentSetId,
                                         index: node.index
                                     )
                                 }
@@ -408,7 +477,7 @@ extension SyncEngine {
                     }
 
                     // ALWAYS update the observed state to match what was actually read from disk
-                    var nodeMap: [String: BookmarkNode] = [:]
+                    var nodeMap: [String: ParsedBookmark] = [:]
                     nodeMap.reserveCapacity(currentNodes.count)
                     var recordsMap: [String: BookmarkNodeRecord] = [:]
                     recordsMap.reserveCapacity(currentNodes.count)
@@ -444,7 +513,9 @@ extension SyncEngine {
                 self.viewModel.syncStatus = "Idle"
             }
         } catch {
+            // Never leave the UI pinned to "Syncing..." after a failure.
             SyncLog.error("Sync failed: \(error)")
+            viewModel.syncStatus = "Idle"
         }
     }
 }

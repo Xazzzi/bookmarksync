@@ -9,10 +9,10 @@ class ChromeParser: BrowserParser {
         self.filePath = filePath
     }
     
-    func read() throws -> [BookmarkNode] {
+    func read() throws -> [ParsedBookmark] {
         let data = try Data(contentsOf: filePath)
         let bookmarks = try JSONDecoder().decode(ChromeBookmarks.self, from: data)
-        var result: [BookmarkNode] = []
+        var result: [ParsedBookmark] = []
         
         var seenKeys: [String: Int] = [:]
         
@@ -24,7 +24,7 @@ class ChromeParser: BrowserParser {
             let count = seenKeys[baseId, default: 0]
             seenKeys[baseId] = count + 1
             let uniqueId = count == 0 ? baseId : "\(baseId):dup\(count)"
-            let bNode = BookmarkNode(
+            let bNode = ParsedBookmark(
                 id: uniqueId,
                 title: node.name,
                 url: node.url,
@@ -72,11 +72,11 @@ class ChromeParser: BrowserParser {
         return String(micros)
     }
     
-    func write(nodes: [BookmarkNode]) throws {
+    func write(nodes: [ParsedBookmark]) throws {
         try performBackup()
         
         let strippedNodes = nodes.map { node in
-            BookmarkNode(
+            ParsedBookmark(
                 id: stripProfileSetPrefix(node.id),
                 title: node.title,
                 url: node.url,

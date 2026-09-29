@@ -1,25 +1,26 @@
 import Foundation
 
 extension AppViewModel {
-    /// Hard cap on retained activity rows. The history is a UI feed, not a log:
-    /// without a bound, a large import grew it to one row per bookmark and every
-    /// subsequent `addDiff` rescanned the whole thing.
-    static let diffHistoryLimit = 200
-
-    /// Records an export mismatch as at most `titles.count + 1` rows, in a single
-    /// published mutation.
+    /// Hard cap on retained activity rows, as a memory backstop only.
     ///
-    /// `totalCount` is the true number of changes; `titles` is a bounded sample.
-    /// When the sample is short of the total, a summary row stands in for the
-    /// remainder so the feed stays honest without holding thousands of entries.
+    /// Every change gets its own row — the feed is meant to be read item by item —
+    /// so this is set well above a full large import rather than at a size that
+    /// would summarise one away. The list rendering it is lazy, so row count
+    /// costs memory, not frame time.
+    static let diffHistoryLimit = 5000
+
+    /// Records one activity row per changed bookmark, in a single published
+    /// mutation.
+    ///
+    /// Rows are deduplicated against what is already pending for the same target,
+    /// so a repeated sync of unchanged state does not grow the feed.
     func addDiffs(
         titles: [String],
-        totalCount: Int,
         targetBundleId: String,
         targetProfileName: String,
         profileSetId: String
     ) {
-        guard totalCount > 0 else { return }
+        guard !titles.isEmpty else { return }
 
         func makeRecord(_ title: String) -> DiffRecord {
             DiffRecord(
@@ -46,11 +47,6 @@ extension AppViewModel {
         for title in titles where !seen.contains(title) {
             seen.insert(title)
             additions.append(makeRecord(title))
-        }
-
-        if totalCount > titles.count {
-            let remainder = totalCount - titles.count
-            additions.append(makeRecord("+\(remainder) more change\(remainder == 1 ? "" : "s")"))
         }
 
         guard !additions.isEmpty else { return }

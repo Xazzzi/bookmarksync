@@ -48,6 +48,10 @@ struct TrayMenuActivityView: View {
             let filteredDiffs = viewModel.diffHistory.filter { diff in
                 viewModel.isActivityFilterGlobal ? true : diff.profileSetId == viewModel.selectedProfileSetId
             }
+            let profileSetNames = Dictionary(
+                viewModel.profileSets.map { ($0.id, $0.name) },
+                uniquingKeysWith: { first, _ in first }
+            )
 
             if let errorStr = viewModel.queueError {
                 HStack(alignment: .top) {
@@ -76,11 +80,13 @@ struct TrayMenuActivityView: View {
                     .padding(.vertical, 4)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 4) {
+                    // Lazy so a feed holding one row per imported bookmark costs
+                    // memory but not frame time.
+                    LazyVStack(alignment: .leading, spacing: 4) {
                         ForEach(filteredDiffs) { diff in
                             HStack(spacing: 4) {
                                 if viewModel.isActivityFilterGlobal, let psId = diff.profileSetId {
-                                    let setName = viewModel.profileSets.first(where: { $0.id == psId })?.name ?? "Set"
+                                    let setName = profileSetNames[psId] ?? "Set"
                                     ProfileSetIcon(name: setName, isActive: false)
                                         .padding(.trailing, 2)
                                 }

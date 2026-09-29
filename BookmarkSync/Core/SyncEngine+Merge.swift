@@ -44,21 +44,21 @@ extension SyncEngine {
             guard idx < browsers.count else { continue }
             let currentNodes = browsers[idx]
             
-            let latestNodes: [String: BookmarkNode]
+            // Previously observed browser state, compared field-by-field below.
+            let latestNodes: [String: ParsedBookmark]
             if let cached = viewModel.latestBrowserNodes[config.id] {
                 latestNodes = cached
             } else if let data = config.observedStateData,
                       let decoded = try? JSONDecoder().decode([String: BookmarkNodeRecord].self, from: data) {
-                var nodeMap: [String: BookmarkNode] = [:]
+                var nodeMap: [String: ParsedBookmark] = [:]
                 for (id, record) in decoded {
-                    nodeMap[id] = BookmarkNode(
+                    nodeMap[id] = ParsedBookmark(
                         id: id,
                         title: record.title,
                         url: record.url,
                         type: record.type,
                         parentId: record.parentId,
                         mtime: Date(),
-                        profileSetId: profileSetId,
                         index: record.index ?? 0
                     )
                 }

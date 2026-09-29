@@ -60,7 +60,7 @@ func stripProfileSetPrefix(_ id: String) -> String {
     return id
 }
 
-enum BookmarkType: String, Codable {
+enum BookmarkType: String, Codable, Sendable {
     case folder
     case leaf
 }

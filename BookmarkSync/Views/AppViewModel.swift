@@ -11,7 +11,7 @@ class AppViewModel: ObservableObject {
     @Published var isFullDiskAccessGranted: Bool = true
     @Published var isWatchingEnabled: Bool = true
     @Published var isWritingEnabled: Bool = true
-    @Published var latestBrowserNodes: [String: [String: BookmarkNode]] = [:]
+    @Published var latestBrowserNodes: [String: [String: ParsedBookmark]] = [:]
 
     /// Bumped whenever the sync engine commits bookmark changes.
     ///

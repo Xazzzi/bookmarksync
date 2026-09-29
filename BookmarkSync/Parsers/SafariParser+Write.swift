@@ -1,11 +1,11 @@
 import Foundation
 
 extension SafariParser {
-    func write(nodes: [BookmarkNode]) throws {
+    func write(nodes: [ParsedBookmark]) throws {
         try performBackup()
         
         let strippedNodes = nodes.map { node in
-            BookmarkNode(
+            ParsedBookmark(
                 id: stripProfileSetPrefix(node.id),
                 title: node.title,
                 url: node.url,

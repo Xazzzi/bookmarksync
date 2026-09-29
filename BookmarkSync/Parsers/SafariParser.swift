@@ -9,14 +9,14 @@ class SafariParser: BrowserParser {
         self.profileName = profileName
     }
     
-    func read() throws -> [BookmarkNode] {
+    func read() throws -> [ParsedBookmark] {
         let data = try Data(contentsOf: filePath)
         guard let plist = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
               let rootChildren = plist["Children"] as? [[String: Any]] else {
             return []
         }
         
-        var result: [BookmarkNode] = []
+        var result: [ParsedBookmark] = []
         var seenKeys: [String: Int] = [:]
         
         if profileName == "Default" {
@@ -46,8 +46,8 @@ class SafariParser: BrowserParser {
         return result
     }
     
-    private func parseNode(_ dict: [String: Any], parentId: String?, prefix: String, index: Int, seenKeys: inout [String: Int]) -> [BookmarkNode] {
-        var nodes: [BookmarkNode] = []
+    private func parseNode(_ dict: [String: Any], parentId: String?, prefix: String, index: Int, seenKeys: inout [String: Int]) -> [ParsedBookmark] {
+        var nodes: [ParsedBookmark] = []
         
         let type = dict["WebBookmarkType"] as? String
         let uriDict = dict["URIDictionary"] as? [String: Any]
@@ -59,7 +59,7 @@ class SafariParser: BrowserParser {
             let count = seenKeys[baseId, default: 0]
             seenKeys[baseId] = count + 1
             let uniqueId = count == 0 ? baseId : "\(baseId):dup\(count)"
-            let node = BookmarkNode(id: uniqueId, title: title, url: nil, type: .folder, parentId: parentId, mtime: Date(timeIntervalSince1970: 0), index: index)
+            let node = ParsedBookmark(id: uniqueId, title: title, url: nil, type: .folder, parentId: parentId, mtime: Date(timeIntervalSince1970: 0), index: index)
             nodes.append(node)
             
             if let children = dict["Children"] as? [[String: Any]] {
@@ -74,7 +74,7 @@ class SafariParser: BrowserParser {
             let count = seenKeys[baseId, default: 0]
             seenKeys[baseId] = count + 1
             let uniqueId = count == 0 ? baseId : "\(baseId):dup\(count)"
-            let node = BookmarkNode(id: uniqueId, title: title, url: url, type: .leaf, parentId: parentId, mtime: Date(timeIntervalSince1970: 0), index: index)
+            let node = ParsedBookmark(id: uniqueId, title: title, url: url, type: .leaf, parentId: parentId, mtime: Date(timeIntervalSince1970: 0), index: index)
             nodes.append(node)
         }
         
