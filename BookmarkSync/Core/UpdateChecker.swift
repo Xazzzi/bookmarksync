@@ -4,7 +4,7 @@ import AppKit
 /// Opt-in check for a newer release, announced in a plain text file on the website.
 ///
 /// Off by default: nothing is requested until the user enables weekly checks or
-/// clicks "Check Now". The request carries only the app's own version.
+/// clicks "Check Now". The request carries only the app's own version, in its User-Agent.
 @MainActor
 final class UpdateChecker: ObservableObject {
     static let shared = UpdateChecker()
@@ -151,10 +151,10 @@ final class UpdateChecker: ObservableObject {
     private static let session = URLSession(configuration: .ephemeral)
 
     private static func fetchLatest(current: String) async throws -> Release {
-        var components = URLComponents(url: feedURL, resolvingAgainstBaseURL: false)!
-        components.queryItems = [URLQueryItem(name: "v", value: current)]
-        var request = URLRequest(url: components.url!, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
+        var request = URLRequest(url: feedURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
         request.httpShouldHandleCookies = false
+        // Replaces the default agent, which would also reveal CFNetwork and Darwin versions.
+        request.setValue("BookmarkSync/\(current)", forHTTPHeaderField: "User-Agent")
 
         let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {

@@ -98,7 +98,7 @@ For in-depth explanations on the dynamic file watcher, SwiftUI picker bugs, deta
 ## 🔔 Update Checks
 
 Update checks are off by default. In the menu bar popover, enable **Check for updates weekly** or click **Check Now**.
-The app then fetches `https://bookmarksync.xazi.app/latest.txt?v=<its version>`, at most once a week.
+The app then fetches `https://bookmarksync.xazi.app/latest.txt`, at most once a week, with `BookmarkSync/<version>` as its User-Agent.
 If a newer version exists, a banner shows its changelog, and **Download** opens the website.
 
 To announce a release, update `Website/latest.txt`.
