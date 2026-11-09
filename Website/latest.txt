@@ -1,1 +1,11 @@
-1.1.0
+1.3.0
+- Ukrainian, Spanish and Simplified Chinese interface
+- Optional weekly check for new versions
+- Large deletions now wait for your confirmation before reaching other browsers
+- Unreadable bookmark files and temporarily missing profiles no longer cause data loss
+- Backups are kept up to 30 days, can be made manually, and show a preview before restoring
+- Firefox bookmarks are updated in place, keeping Firefox Sync data and separators
+- Safari top-level folders and Chrome mobile bookmarks now sync
+- Empty folders are kept, and URLs that differ in path case or port stay separate
+- Delete bookmarks and folders right from the Bookmarks window
+- The menu shows which browser to quit for pending writes, and the app version
