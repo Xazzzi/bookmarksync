@@ -21,7 +21,7 @@ targets:
       properties:
         LSUIElement: true
         CFBundleDevelopmentRegion: en
-        CFBundleLocalizations: [en, zh-Hans]
+        CFBundleLocalizations: [en, zh-Hans, uk, es]
         CFBundleIdentifier: app.xazi.BookmarkSync
         CFBundleName: BookmarkSync
         CFBundleShortVersionString: 1.1.0

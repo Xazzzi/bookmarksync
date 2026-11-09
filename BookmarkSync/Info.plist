@@ -8,6 +8,8 @@
 	<array>
 		<string>en</string>
 		<string>zh-Hans</string>
+		<string>uk</string>
+		<string>es</string>
 	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>

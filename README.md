@@ -97,16 +97,17 @@ For in-depth explanations on the dynamic file watcher, SwiftUI picker bugs, deta
 
 ## 🌐 Interface Languages
 
-The app includes English and Simplified Chinese (`zh-Hans`) using native macOS
-localization. It follows the system language by default. To override it, open
+The app includes English, Simplified Chinese (`zh-Hans`), Ukrainian (`uk`) and
+Spanish (`es`) using native macOS localization. It follows the system language
+by default. To override it, open
 **System Settings → General → Language & Region → Applications**, add
-**BookmarkSync**, and choose English or Simplified Chinese. Quit and reopen the
-app after changing the language.
+**BookmarkSync**, and choose a language. Quit and reopen the app after changing
+the language.
 
 Localization resources live in `BookmarkSync/Localization/{language}.lproj`.
 SwiftUI literals use `Localizable.strings`; runtime messages use `L10n` and search
 counts use `Localizable.stringsdict`. Add matching keys and format arguments in
-both languages. Run `python3 scripts/check_localizations.py` before submitting.
+every language. Run `python3 scripts/check_localizations.py` before submitting.
 
 Bookmark titles, browser profile names, stored `Set N` names, activity tokens,
 and the `Deleted by BookmarkSync` archive folder remain unchanged on disk.

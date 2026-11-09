@@ -29,14 +29,19 @@ final class LocalizationTests: XCTestCase {
     }
 
     func testSearchCountUsesNativePluralResources() throws {
-        for language in ["en", "zh-Hans"] {
+        for language in ["en", "zh-Hans", "uk", "es"] {
             let bundle = try languageBundle(language)
             for count in [0, 1, 2, 1000] {
                 let format = L10n.text("bookmarks_found", bundle: bundle)
                 let result = String.localizedStringWithFormat(format, count)
                 let formattedCount = count.formatted(.number)
-                let expected = language == "zh-Hans" ? "找到 \(formattedCount) 项" : "\(formattedCount) found"
-                XCTAssertEqual(result, expected)
+                let expected = switch language {
+                case "zh-Hans": "找到 \(formattedCount) 项"
+                case "uk": "Знайдено \(formattedCount)"
+                case "es": count == 1 ? "1 encontrado" : "\(formattedCount) encontrados"
+                default: "\(formattedCount) found"
+                }
+                XCTAssertEqual(result, expected, language)
             }
         }
     }

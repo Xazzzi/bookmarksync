@@ -26,12 +26,16 @@ def load_table(language):
     return table
 
 
+LANGUAGES = ['en', 'zh-Hans', 'uk', 'es']
+
+
 def main():
     english = load_table('en')
-    chinese = load_table('zh-Hans')
-    assert english.keys() == chinese.keys(), 'Language keys differ'
-    for key in english:
-        assert FORMAT.findall(english[key]) == FORMAT.findall(chinese[key]), key
+    for language in LANGUAGES[1:]:
+        table = load_table(language)
+        assert english.keys() == table.keys(), f'{language}: keys differ from en'
+        for key in english:
+            assert FORMAT.findall(english[key]) == FORMAT.findall(table[key]), f'{language}: {key}'
 
     # Catch new untranslated SwiftUI literals, including help text and metadata.
     literal = r'"((?:[^"\\]|\\.)*)"'
@@ -52,7 +56,7 @@ def main():
             used.add(key)
     assert not (used - english.keys()), f'Untranslated UI literals: {used - english.keys()}'
 
-    for language in ['en', 'zh-Hans']:
+    for language in LANGUAGES:
         data = plistlib.loads((RESOURCES / f'{language}.lproj' / 'Localizable.stringsdict').read_bytes())
         plural = data['bookmarks_found']
         assert plural['NSStringLocalizedFormatKey'] == '%#@count@'
@@ -60,8 +64,8 @@ def main():
         assert 'other' in plural['count']
     info = plistlib.loads((ROOT / 'BookmarkSync' / 'Info.plist').read_bytes())
     assert info['CFBundleDevelopmentRegion'] == 'en'
-    assert set(info['CFBundleLocalizations']) == {'en', 'zh-Hans'}
-    print(f'OK: {len(english)} bilingual strings, {len(used)} UI literals, matching format arguments and plural resources.')
+    assert set(info['CFBundleLocalizations']) == set(LANGUAGES)
+    print(f'OK: {len(english)} strings in {len(LANGUAGES)} languages, {len(used)} UI literals, matching format arguments and plural resources.')
 
 
 if __name__ == '__main__':
