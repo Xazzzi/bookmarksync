@@ -294,6 +294,25 @@ final class DeletionHoldIntegrationTests: XCTestCase {
     }
 
     @MainActor
+    func testApprovedDeletionReachingAnotherProfileIsNotHeldAgain() async throws {
+        let h = try await makeSyncedHarness()
+
+        try writeChrome(h.fileA, indices: Array(0..<5))
+        try await sync(h, changed: [h.fileA])
+        h.viewModel.approveDeletionHold(configId: h.configA.id)
+        try await waitUntilIdle(h)
+        XCTAssertEqual(try hubCount(h), 5)
+
+        // What the export writes to B: the same 15 bookmarks removed.
+        try writeChrome(h.fileB, indices: Array(0..<5))
+        try await sync(h, changed: [h.fileB])
+
+        XCTAssertTrue(h.viewModel.deletionHolds.isEmpty, "Deletions already gone from the hub cannot spread and are not held")
+        XCTAssertEqual(h.viewModel.latestBrowserNodes["com.google.Chrome:B"]?.count, 5, "B's new file becomes its baseline")
+        XCTAssertEqual(try hubCount(h), 5)
+    }
+
+    @MainActor
     func testRejectedDeletionKeepsTheHubAndIsNotHeldAgain() async throws {
         let h = try await makeSyncedHarness()
 

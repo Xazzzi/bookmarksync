@@ -301,7 +301,10 @@ extension SyncEngine {
                             viewModel.approvedDeletions[config.id] = nil
                             SyncLog.event("[Guard] \(config.browserName) (\(config.profileName)): deletion rejected by user, restoring from hub")
                         } else {
+                            // Only deletions the hub still holds can spread. The rest are
+                            // already gone from the hub, e.g. removed by our own export.
                             let deletedIds = Set(latestDict.keys).subtracting(currentDict.keys)
+                                .filter { stateById[$0] != nil }
                             let verdict = DeletionGuard.evaluate(
                                 previousCount: latestDict.count,
                                 currentCount: currentDict.count,
