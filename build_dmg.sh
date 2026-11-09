@@ -6,7 +6,7 @@ if ! command -v create-dmg &> /dev/null; then
     exit 1
 fi
 
-APP_SOURCE="DerivedData/BookmarkSync/Build/Products/Release/BookmarkSync.app"
+APP_SOURCE="DerivedData/Build/Products/Release/BookmarkSync.app"
 DEST_DIR="Website/assets"
 DMG_NAME="BookmarkSync.dmg"
 TARGET_DMG="$DEST_DIR/$DMG_NAME"

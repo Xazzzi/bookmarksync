@@ -1,1 +1,1 @@
-DerivedData/BookmarkSync/Build/Products/Release/BookmarkSync.app
+DerivedData/Build/Products/Release/BookmarkSync.app

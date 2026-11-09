@@ -6,5 +6,7 @@ cd "Website"
 
 echo "In $PWD"
 SSH="ssh -i ~/.ssh/google_compute_engine"
-rsync -rlptvzP --no-p -e "$SSH" ./ xazi.app:~/bookmarksync/
+# xazi.app is proxied by Cloudflare, which does not pass SSH; use the ~/.ssh/config alias.
+HOST="${DEPLOY_HOST:-xazi.app}"
+rsync -rlptvzP --no-p -e "$SSH" ./ "$HOST":~/bookmarksync/
 # Can add --delete flag above to clean destination from previous deployments
