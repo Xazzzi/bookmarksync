@@ -142,3 +142,12 @@
 "The bookmark will be removed from every synced browser. Each browser's bookmark file is backed up before it is written, and the removed bookmark is kept in the \"Deleted by BookmarkSync\" folder." = "The bookmark will be removed from every synced browser. Each browser's bookmark file is backed up before it is written, and the removed bookmark is kept in the \"Deleted by BookmarkSync\" folder.";
 "Delete from every synced browser" = "Delete from every synced browser";
 "Version (build, commit)" = "Version (build, commit)";
+"Check for updates weekly" = "Check for updates weekly";
+"Check Now" = "Check Now";
+"BookmarkSync %@ is available." = "BookmarkSync %@ is available.";
+"Download" = "Download";
+"Dismiss" = "Dismiss";
+"BookmarkSync is up to date." = "BookmarkSync is up to date.";
+"Could not check for updates: %@" = "Could not check for updates: %@";
+"Once a week, BookmarkSync asks bookmarksync.xazi.app for the latest version number. Only the app's own version is sent." = "Once a week, BookmarkSync asks bookmarksync.xazi.app for the latest version number. Only the app's own version is sent.";
+"Unexpected update file contents" = "Unexpected update file contents";

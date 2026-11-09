@@ -10,7 +10,7 @@ By directly merging local browser bookmark files, it leverages each browser's na
 
 ## 🚀 Key Features
 
-* **Local-First & Private**: Operates strictly within the macOS sandbox. No external APIs, servers, or cloud credentials required.
+* **Local-First & Private**: Operates strictly within the macOS sandbox. No external APIs, servers, or cloud credentials required. The only network request is the optional update check, which is off until you enable it.
 * **Unified N-Way Merge**: An orchestrator resolves updates, deletes, and insertions dynamically across all connected browsers using a centralized SwiftData cache.
 * **Dynamic File Watching**: Monitors parent directories of *only enabled browser profiles* recursively via `FSEvents`. Automatically ignores unrelated system changes (caches, logs, history) using precise file-level filters (`Bookmarks`, `Bookmarks.plist`, `places.sqlite`).
 * **Zero-Latency Write Pipeline**: Pending writes are safely queued to prevent cache clobbering while a browser is running. Observing application terminations instantly flushes writes the moment you close a browser.
@@ -92,6 +92,23 @@ brew install xcodegen
 ## 📂 Detailed Onboarding & History
 
 For in-depth explanations on the dynamic file watcher, SwiftUI picker bugs, detached SwiftData context crashes, and lock-resilient synchronization, refer to the [AGENTS.md](AGENTS.md) file inside the project root.
+
+---
+
+## 🔔 Update Checks
+
+Update checks are off by default. In the menu bar popover, enable **Check for updates weekly** or click **Check Now**.
+The app then fetches `https://bookmarksync.xazi.app/latest.txt?v=<its version>`, at most once a week.
+If a newer version exists, a banner shows its changelog, and **Download** opens the website.
+
+To announce a release, update `Website/latest.txt`.
+Line 1 holds the version, and each later line is one changelog entry:
+
+```text
+1.2.0
+- Ukrainian and Spanish interface
+- Weekly update check
+```
 
 ---
 

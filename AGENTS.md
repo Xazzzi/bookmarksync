@@ -27,6 +27,7 @@ graph TD
 - **`SyncEngine.swift`**: The synchronization heart. Fetches current browser bookmark trees, merges them against the global state, calculates differences, and triggers database/file updates.
 - **`FileWatcher.swift`**: Wrapper around macOS `FSEvents` system. Watches active browser directories recursively on a background thread.
 - **`WriteQueue.swift`**: Thread-safe serial write pipeline. Queues updates for active browsers and defer-writes them if the target browser process is running to avoid in-memory cache clobbering.
+- **`UpdateChecker.swift`**: Opt-in weekly check of `Website/latest.txt` (`?v=<app version>`). It is off by default and is the app's only network request. Line 1 holds the version, and later lines are changelog entries.
 
 ---
 

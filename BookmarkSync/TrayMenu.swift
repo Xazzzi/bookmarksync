@@ -3,6 +3,7 @@ import SwiftData
 
 struct TrayMenu: View {
     @ObservedObject var viewModel: AppViewModel
+    @ObservedObject private var updateChecker = UpdateChecker.shared
     @Query var configs: [BrowserConfig]
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openWindow) private var openWindow
@@ -61,6 +62,10 @@ struct TrayMenu: View {
             }
 
             Divider()
+
+            if let release = updateChecker.available {
+                UpdateBanner(checker: updateChecker, release: release)
+            }
 
             // Deletions held back by DeletionGuard, waiting for the user.
             ForEach(viewModel.deletionHolds.values.sorted { $0.configId < $1.configId }) { hold in
@@ -282,6 +287,10 @@ struct TrayMenu: View {
 
             // Queue / History Header
             TrayMenuActivityView(viewModel: viewModel, configs: configs)
+
+            Divider()
+
+            UpdateCheckRow(checker: updateChecker)
 
             Divider()
 

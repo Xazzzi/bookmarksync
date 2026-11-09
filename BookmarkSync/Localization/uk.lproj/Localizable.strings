@@ -142,3 +142,12 @@
 "The bookmark will be removed from every synced browser. Each browser's bookmark file is backed up before it is written, and the removed bookmark is kept in the \"Deleted by BookmarkSync\" folder." = "Закладку буде вилучено з усіх синхронізованих браузерів. Перед записом файл закладок кожного браузера копіюється, а вилучена закладка зберігається в папці «Deleted by BookmarkSync».";
 "Delete from every synced browser" = "Видалити з усіх синхронізованих браузерів";
 "Version (build, commit)" = "Версія (збірка, коміт)";
+"Check for updates weekly" = "Щотижня перевіряти оновлення";
+"Check Now" = "Перевірити зараз";
+"BookmarkSync %@ is available." = "Доступна версія BookmarkSync %@.";
+"Download" = "Завантажити";
+"Dismiss" = "Приховати";
+"BookmarkSync is up to date." = "У вас найновіша версія BookmarkSync.";
+"Could not check for updates: %@" = "Не вдалося перевірити оновлення: %@";
+"Once a week, BookmarkSync asks bookmarksync.xazi.app for the latest version number. Only the app's own version is sent." = "Раз на тиждень BookmarkSync запитує в bookmarksync.xazi.app номер останньої версії. Надсилається лише версія самої програми.";
+"Unexpected update file contents" = "Неочікуваний вміст файлу оновлення";

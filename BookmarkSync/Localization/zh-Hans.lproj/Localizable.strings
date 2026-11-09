@@ -142,3 +142,12 @@
 "The bookmark will be removed from every synced browser. Each browser's bookmark file is backed up before it is written, and the removed bookmark is kept in the \"Deleted by BookmarkSync\" folder." = "这条书签会从所有已同步的浏览器中移除。写入每个浏览器之前都会先备份书签文件，移除的书签会保留在“Deleted by BookmarkSync”文件夹里。";
 "Delete from every synced browser" = "从所有已同步的浏览器中删除";
 "Version (build, commit)" = "版本（构建号，提交）";
+"Check for updates weekly" = "每周检查更新";
+"Check Now" = "立即检查";
+"BookmarkSync %@ is available." = "BookmarkSync %@ 已发布。";
+"Download" = "下载";
+"Dismiss" = "忽略";
+"BookmarkSync is up to date." = "BookmarkSync 已是最新版本。";
+"Could not check for updates: %@" = "无法检查更新：%@";
+"Once a week, BookmarkSync asks bookmarksync.xazi.app for the latest version number. Only the app's own version is sent." = "BookmarkSync 每周向 bookmarksync.xazi.app 查询一次最新版本号，只发送应用自身的版本号。";
+"Unexpected update file contents" = "更新文件内容无法识别";

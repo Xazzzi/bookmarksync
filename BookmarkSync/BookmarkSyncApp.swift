@@ -21,6 +21,10 @@ struct BookmarkSyncApp: App {
     @StateObject private var viewModel = AppViewModel()
     @State private var engine: SyncEngine?
 
+    init() {
+        // Started at launch, not when the tray first opens; does nothing until enabled.
+        Task { @MainActor in UpdateChecker.shared.start() }
+    }
 
     var body: some Scene {
         MenuBarExtra("BookmarkSync", systemImage: "bookmark.fill") {
