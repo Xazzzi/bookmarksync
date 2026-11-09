@@ -14,14 +14,13 @@ final class SafariParser: BrowserParser {
     /// Top-level entries that are Safari's own, not the user's bookmarks.
     static let systemRootTitles: Set<String> = ["BookmarksBar", "BookmarksMenu", "com.apple.ReadingList", "History"]
 
-    /// The top-level folder that holds Chromium's mobile bookmarks in Safari,
-    /// which has no mobile root of its own. Either name is recognised; a new
-    /// folder is named in the user's language.
-    static let mobileFolderTitles: Set<String> = ["移动设备书签", "Mobile Bookmarks"]
+    /// The top-level folder that holds Chromium's mobile bookmarks in Safari.
+    /// It is matched by title, so the title is fixed rather than localized:
+    /// Macs on different languages must agree on it.
+    static let newMobileFolderTitle = "Mobile Bookmarks"
 
-    static var newMobileFolderTitle: String {
-        Locale.preferredLanguages.first?.hasPrefix("zh") == true ? "移动设备书签" : "Mobile Bookmarks"
-    }
+    /// Also recognises the Chinese title earlier builds created on Chinese systems.
+    static let mobileFolderTitles: Set<String> = [newMobileFolderTitle, "移动设备书签"]
 
     static func isMobileFolder(_ entry: [String: Any]) -> Bool {
         entry["WebBookmarkType"] as? String == "WebBookmarkTypeList"

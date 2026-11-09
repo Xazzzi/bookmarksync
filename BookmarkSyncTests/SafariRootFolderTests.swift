@@ -107,6 +107,7 @@ final class SafariRootFolderTests: XCTestCase {
 
         let mobile = try rootChildren().filter(SafariParser.isMobileFolder)
         XCTAssertEqual(mobile.count, 1)
+        XCTAssertEqual(mobile.first?["Title"] as? String, "Mobile Bookmarks")
         XCTAssertEqual(titles(mobile.first?["Children"] as? [[String: Any]] ?? []), ["P"])
         XCTAssertTrue(Set(try parser.read().map(\.id)).contains("synced:p.com"))
 
@@ -129,6 +130,19 @@ final class SafariRootFolderTests: XCTestCase {
         try parser.write(nodes: nodes)
         XCTAssertEqual(titles(try rootChildren()), ["BookmarksBar", "BookmarksMenu", "Mobile Bookmarks"])
         XCTAssertEqual(titles(try children(of: "Mobile Bookmarks")), ["P", "Q"])
+    }
+
+    func testALegacyChineseMobileFolderIsReused() throws {
+        try writeFixture([
+            list("BookmarksBar", []),
+            list("BookmarksMenu", []),
+            list("移动设备书签", [leaf("P", "https://p.com/")]),
+        ])
+        var nodes = try parser.read()
+        nodes.append(ParsedBookmark(id: "synced:q.com", title: "Q", url: "https://q.com/", type: .leaf, mtime: Date(), index: 1))
+        try parser.write(nodes: nodes)
+        XCTAssertEqual(titles(try rootChildren()), ["BookmarksBar", "BookmarksMenu", "移动设备书签"])
+        XCTAssertEqual(titles(try children(of: "移动设备书签")), ["P", "Q"])
     }
 
     func testNoMobileFolderIsCreatedWithoutMobileBookmarks() throws {
