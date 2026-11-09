@@ -56,32 +56,41 @@ class SyncEngine {
         DispatchQueue.main.asyncAfter(deadline: .now() + (changedPaths.isEmpty ? 0.0 : 1.0), execute: workItem)
     }
     
+    /// Bookmark files the current watcher reports changes for.
+    private static var watchedFiles: [String] = []
+
     func updateWatcher(activeConfigs: [BrowserConfig]) {
-        let watchDirs = Set(activeConfigs.map { 
-            URL(fileURLWithPath: $0.bookmarkFilePath).deletingLastPathComponent().path 
+        // Capture plain paths, never the configs: the callback can outlive
+        // them, and touching a deleted or reset @Model instance from it is a
+        // fatal error.
+        let activeFilePaths = activeConfigs.map { $0.bookmarkFilePath }.sorted()
+        let watchDirs = Set(activeFilePaths.map {
+            URL(fileURLWithPath: $0).deletingLastPathComponent().path
         }).sorted()
-        
-        if let currentWatcher = Self.watcher, currentWatcher.pathsToWatch.sorted() == watchDirs {
+
+        if let currentWatcher = Self.watcher,
+           currentWatcher.pathsToWatch.sorted() == watchDirs,
+           Self.watchedFiles == activeFilePaths {
             return
         }
-        
+
         Self.watcher?.stop()
         Self.watcher = nil
-        
+        Self.watchedFiles = activeFilePaths
+
         guard !watchDirs.isEmpty else { return }
-        
+
         let newWatcher = FileWatcher(paths: watchDirs)
         newWatcher.callback = { [weak self] paths in
             guard let self = self else { return }
             Task { @MainActor in
-                let activeFilePaths = activeConfigs.map { $0.bookmarkFilePath }
                 let relevantPaths = paths.filter { path in
-                    activeFilePaths.contains(path) || 
-                    activeFilePaths.contains((path as NSString).appendingPathComponent("Bookmarks")) || 
-                    activeFilePaths.contains((path as NSString).appendingPathComponent("Bookmarks.plist")) || 
+                    activeFilePaths.contains(path) ||
+                    activeFilePaths.contains((path as NSString).appendingPathComponent("Bookmarks")) ||
+                    activeFilePaths.contains((path as NSString).appendingPathComponent("Bookmarks.plist")) ||
                     activeFilePaths.contains((path as NSString).appendingPathComponent("places.sqlite"))
                 }
-                
+
                 if !relevantPaths.isEmpty {
                     self.triggerSync(changedPaths: relevantPaths)
                 }

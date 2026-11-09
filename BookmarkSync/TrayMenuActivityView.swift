@@ -19,7 +19,7 @@ struct TrayMenuActivityView: View {
                     HStack(spacing: 3) {
                         Image(systemName: viewModel.isActivityFilterGlobal ? "globe" : "person.crop.circle")
                             .font(.system(size: 14))
-                        Text(viewModel.isActivityFilterGlobal ? "Global" : "Profile")
+                        Text(verbatim: L10n.text(viewModel.isActivityFilterGlobal ? "Global" : "Profile"))
                             .font(.system(size: 12, weight: .medium))
                     }
                     .foregroundColor(.secondary)
@@ -72,7 +72,7 @@ struct TrayMenuActivityView: View {
             if filteredDiffs.isEmpty {
                 let currentSetId = viewModel.selectedProfileSetId
                 let hasActive = configs.contains(where: { $0.isEnabled && $0.profileSetId == currentSetId })
-                Text(hasActive ? "In sync" : "Idle")
+                Text(verbatim: L10n.text(hasActive ? "In sync" : "Idle"))
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .padding(.leading, 8)
@@ -105,7 +105,7 @@ struct TrayMenuActivityView: View {
                                     }
                                 }
 
-                                Text(diff.bookmarkTitle)
+                                Text(verbatim: L10n.activityTitle(diff.bookmarkTitle))
                                     .font(.system(size: 12))
                                     .lineLimit(1)
                                     .truncationMode(.tail)

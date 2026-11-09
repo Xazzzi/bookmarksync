@@ -1,0 +1,74 @@
+name: macOS build and tests
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-latest
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show Xcode version
+        run: xcodebuild -version
+      - name: Check localization resources
+        run: python3 scripts/check_localizations.py
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        run: xcodegen generate
+      - name: Build and test
+        run: >-
+          xcodebuild test
+          -project BookmarkSync.xcodeproj
+          -scheme BookmarkSync
+          -destination 'platform=macOS'
+          -derivedDataPath DerivedData
+          -resultBundlePath TestResults.xcresult
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+          DEVELOPMENT_TEAM=
+      # Every packaged build gets its own build number (the run number) and
+      # commit, shown in the menu bar. Done before signing, which covers it.
+      - name: Stamp build number
+        if: hashFiles('signing/BookmarkSync-Signing.crt') != '' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          PLIST=DerivedData/Build/Products/Debug/BookmarkSync.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Delete :BookmarkSyncCommit" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :BookmarkSyncCommit string ${HEAD_SHA:0:7}" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" -c "Print :CFBundleVersion" -c "Print :BookmarkSyncCommit" "$PLIST"
+      # Fork PRs and repos without signing/BookmarkSync-Signing.crt only build and test.
+      - name: Sign app with persistent certificate
+        if: hashFiles('signing/BookmarkSync-Signing.crt') != '' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+        env:
+          MACOS_SIGNING_P12_BASE64: ${{ secrets.MACOS_SIGNING_P12_BASE64 }}
+          MACOS_SIGNING_P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+        run: |
+          bash scripts/sign_app.sh DerivedData/Build/Products/Debug/BookmarkSync.app
+          bash scripts/check_signing_identity.sh DerivedData/Build/Products/Debug/BookmarkSync.app
+      - name: Package app
+        if: hashFiles('signing/BookmarkSync-Signing.crt') != '' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+        run: |
+          APP_PATH=DerivedData/Build/Products/Debug/BookmarkSync.app
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" BookmarkSync-macOS.zip
+      - name: Upload app
+        if: hashFiles('signing/BookmarkSync-Signing.crt') != '' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: actions/upload-artifact@v4
+        with:
+          name: BookmarkSync-macOS
+          path: BookmarkSync-macOS.zip
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-test-results
+          path: TestResults.xcresult
+          if-no-files-found: ignore

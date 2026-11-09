@@ -70,7 +70,7 @@ graph TD
   - Safari has no bookmark-level `mtime` modification timestamps, resulting in fallback `Date()` (current time) marking Safari bookmarks as "always newer" than Chrome's actual modifications.
 - **The Fix**:
   - **Flattened Roots**: `ChromeParser.read()` updated to skip traversing root folders, setting immediate children to `parentId: nil`. Flat structures now align globally.
-  - **Robust URL Normalization**: Added `normalizeURL` utilizing Swift `URL` parsing to strip protocols (`http`/`https`), host prefixes (`www.`), trailing slashes (`/`), query strings, and hashes from the composite `id`. Complex URL variations map to the identical node ID.
+  - **Robust URL Normalization**: Added `normalizeURL` utilizing Swift `URL` parsing to ignore the protocol (`http`/`https`), host case, a leading `www.`, default ports and trailing slashes in the composite `id`. Paths, query strings, fragments and non-default ports are kept as-is (since id scheme v2; stored ids are migrated by `BookmarkIdMigration`).
   - **Safari Timestamp Pollution**: Set Safari node `mtime` fallback to a constant epoch date `Date(timeIntervalSince1970: 0)` (Jan 1, 1970).
   - **SyncEngine Rename Sorter**: Implemented logic in `SyncEngine.merge` that prioritizes renames by checking which browser changed *relative to the DB sync state* (`stateNode.title`). Conflicting dual-direction queues are resolved cleanly in a single winner direction.
 

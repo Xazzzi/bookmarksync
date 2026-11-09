@@ -17,7 +17,7 @@ struct BookmarkSyncApp: App {
             fatalError("Could not create ModelContainer: \(error)")
         }
     }()
-    
+
     @StateObject private var viewModel = AppViewModel()
     @State private var engine: SyncEngine?
 
@@ -31,36 +31,37 @@ struct BookmarkSyncApp: App {
                 }
         }
         .menuBarExtraStyle(.window)
-        
+
         WindowGroup("Backups Manager", id: "backups") {
             BackupsView(viewModel: viewModel)
                 .modelContainer(sharedModelContainer)
         }
         .windowResizability(.contentSize)
-        
+
         WindowGroup("Unified Bookmarks", id: "bookmarks") {
             BookmarksTreeView(viewModel: viewModel)
                 .modelContainer(sharedModelContainer)
         }
-        
+
         WindowGroup("Welcome to BookmarkSync", id: "onboarding") {
             OnboardingView()
         }
         .windowResizability(.contentSize)
     }
-    
+
     private func setupSync() {
         if engine == nil {
             viewModel.modelContext = sharedModelContainer.mainContext
             viewModel.loadProfileSets()
-            
+            viewModel.rescanProfiles()
+
             let newEngine = SyncEngine(modelContext: sharedModelContainer.mainContext, viewModel: viewModel)
             engine = newEngine
             viewModel.syncEngine = newEngine
-            
+
             // Initial Sync
             newEngine.triggerSync(changedPaths: [], forceImmediate: true)
-            
+
             DockManager.shared.startMonitoring()
             DockManager.shared.updateDockIcon()
         }
@@ -70,17 +71,17 @@ struct BookmarkSyncApp: App {
 class DockManager {
     static let shared = DockManager()
     private var observers: [Any] = []
-    
+
     weak var lastActiveBookmarksWindow: NSWindow?
     weak var lastActiveBackupsWindow: NSWindow?
-    
+
     func startMonitoring() {
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { notification in
             if let window = notification.object as? NSWindow {
-                if window.title == "Unified Bookmarks" {
+                if window.title == L10n.text("Unified Bookmarks") {
                     self.lastActiveBookmarksWindow = window
-                } else if window.title == "Backups Manager" {
+                } else if window.title == L10n.text("Backups Manager") {
                     self.lastActiveBackupsWindow = window
                 }
             }
@@ -92,12 +93,12 @@ class DockManager {
             }
         })
     }
-    
+
     func updateDockIcon() {
-        let visibleMainWindows = NSApp.windows.filter { 
-            ($0.title == "Unified Bookmarks" || $0.title == "Backups Manager") && $0.isVisible 
+        let visibleMainWindows = NSApp.windows.filter {
+            ($0.title == L10n.text("Unified Bookmarks") || $0.title == L10n.text("Backups Manager")) && $0.isVisible
         }
-        
+
         if visibleMainWindows.isEmpty {
             if NSApp.activationPolicy() != .accessory {
                 NSApp.setActivationPolicy(.accessory)

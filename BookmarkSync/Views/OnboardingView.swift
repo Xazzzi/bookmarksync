@@ -18,7 +18,7 @@ struct OnboardingView: View {
         (
             systemImage: "bookmark.square",
             title: "Unified Viewer",
-            description: "Use the Unified Bookmarks window to explore your unified bookmarkes hierarchy for all connected browser profiles."
+            description: "Use the Unified Bookmarks window to explore your unified bookmarks hierarchy for all connected browser profiles."
         ),
         (
             systemImage: "arrow.triangle.2.circlepath",
@@ -80,6 +80,13 @@ struct OnboardingView: View {
                 }
                 
                 Spacer()
+
+                Text(verbatim: "BookmarkSync \(AppVersion.display)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .textSelection(.enabled)
+
+                Spacer()
                 
                 if currentPage < slides.count - 1 {
                     Button("Next") {
@@ -121,11 +128,11 @@ struct OnboardingSlide: View {
                 .background(Color.blue.opacity(0.1))
                 .clipShape(Circle())
 
-            Text(title)
+            Text(verbatim: L10n.text(title))
                 .font(.system(size: 24, weight: .bold))
                 .multilineTextAlignment(.center)
 
-            Text(description)
+            Text(verbatim: L10n.text(description))
                 .font(.system(size: 14))
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)

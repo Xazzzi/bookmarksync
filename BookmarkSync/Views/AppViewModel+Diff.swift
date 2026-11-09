@@ -38,9 +38,12 @@ extension AppViewModel {
         dropPendingReorder(for: targetBundleId)
 
         var additions: [DiffRecord] = []
+        // Only rows still waiting count: a finished row for the same title
+        // (for example a folder deleted, re-created and deleted again) must
+        // not hide a new pending change.
         var seen = Set(
             diffHistory.lazy
-                .filter { $0.targetBundleIds == [targetBundleId] }
+                .filter { $0.isWaiting && $0.targetBundleIds == [targetBundleId] }
                 .map { $0.bookmarkTitle }
         )
 
@@ -127,6 +130,7 @@ extension AppViewModel {
         }
 
         if diffHistory.contains(where: {
+            $0.isWaiting == diff.isWaiting &&
             $0.bookmarkTitle == diff.bookmarkTitle &&
             Set($0.sourceBundleIds) == Set(diff.sourceBundleIds) &&
             Set($0.targetBundleIds) == Set(diff.targetBundleIds)

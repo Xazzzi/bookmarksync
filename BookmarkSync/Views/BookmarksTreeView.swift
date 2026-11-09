@@ -48,7 +48,8 @@ struct BookmarksTreeView: View {
                     breadcrumbs: snapshot.breadcrumbs(for: item.id),
                     configs: configs.map { $0 },
                     viewModel: viewModel,
-                    revealInTree: revealInTree
+                    revealInTree: revealInTree,
+                    onDelete: confirmDelete
                 )
                 .frame(minWidth: 320, idealWidth: 380)
             } else {
@@ -139,7 +140,7 @@ struct BookmarksTreeView: View {
                         ProfileSetIcon(name: pSet.name, isActive: filterProfileSetId == pSet.id)
                     }
                     .buttonStyle(.plain)
-                    .help(pSet.name)
+                    .help(L10n.profileSetName(pSet.name))
                 }
 
                 if filterProfileSetId != "global" {
@@ -179,7 +180,7 @@ struct BookmarksTreeView: View {
                 .foregroundColor(.secondary)
                 .help("Collapse All")
             } else {
-                Text("\(searchResults.count) found")
+                Text(verbatim: L10n.format("bookmarks_found", searchResults.count))
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -243,6 +244,12 @@ struct BookmarksTreeView: View {
                 Button("Reveal in Tree") {
                     revealInTree(item.id)
                 }
+                if Self.canDelete(item) {
+                    Divider()
+                    Button("Delete…", role: .destructive) {
+                        confirmDelete(item)
+                    }
+                }
             }
         }
     }
@@ -266,6 +273,13 @@ struct BookmarksTreeView: View {
                         }
                     )
                     .equatable()
+                    .contextMenu {
+                        if Self.canDelete(row.item) {
+                            Button("Delete…", role: .destructive) {
+                                confirmDelete(row.item)
+                            }
+                        }
+                    }
                 }
             }
             .padding(10)
@@ -310,6 +324,31 @@ struct BookmarksTreeView: View {
     }
 
     // MARK: - Interaction
+
+    static func canDelete(_ item: BookmarkItem) -> Bool {
+        item.title != "Deleted by BookmarkSync"
+    }
+
+    /// Asks before deleting: the deletion reaches every synced browser.
+    func confirmDelete(_ item: BookmarkItem) {
+        let count = viewModel.hubNodesToDelete(forItemId: item.id).count
+        guard count > 0 else { return }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = L10n.format("Delete \"%@\"?", item.title)
+        alert.informativeText = item.type == .folder
+            ? L10n.format("The folder and the %ld item(s) inside it will be removed from every synced browser. Each browser's bookmark file is backed up before it is written, and the removed items are kept in the \"Deleted by BookmarkSync\" folder.", count - 1)
+            : L10n.text("The bookmark will be removed from every synced browser. Each browser's bookmark file is backed up before it is written, and the removed bookmark is kept in the \"Deleted by BookmarkSync\" folder.")
+        alert.addButton(withTitle: L10n.text("Delete"))
+        alert.addButton(withTitle: L10n.text("Cancel"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        if selectedId == item.id {
+            selectedId = nil
+        }
+        viewModel.deleteBookmark(itemId: item.id)
+    }
 
     private func toggleExpand(_ id: String) {
         withAnimation(.easeOut(duration: 0.15)) {
@@ -409,7 +448,7 @@ struct BookmarksTreeView: View {
         return BookmarksTreeView(viewModel: AppViewModel())
             .modelContainer(container)
     } catch {
-        return Text("Failed to create container: \(error.localizedDescription)")
+        return Text(verbatim: L10n.format("Failed to create container: %@", error.localizedDescription))
     }
 }
 
@@ -446,6 +485,6 @@ struct BookmarksTreeView: View {
         return BookmarksTreeView(viewModel: viewModel)
             .modelContainer(container)
     } catch {
-        return Text("Failed to create container: \(error.localizedDescription)")
+        return Text(verbatim: L10n.format("Failed to create container: %@", error.localizedDescription))
     }
 }

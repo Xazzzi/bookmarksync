@@ -43,6 +43,9 @@ extension SafariParser {
         var existingDeletedFolder: [String: Any]? = nil
         var usedUuids: Set<String> = []
         var seenKeys: [String: Int] = [:]
+        // Top-level entries of "other" that live directly at the plist root
+        // rather than in the Bookmarks menu stay where they are.
+        var rootLevelUuids: Set<String> = []
         
         func traverseOriginal(nodes: [[String: Any]], prefix: String, parentId: String?, parentUuid: String?) {
             for node in nodes {
@@ -85,8 +88,16 @@ extension SafariParser {
             if let node = rootChildren.first(where: { ($0["Title"] as? String) == "BookmarksBar" }), let children = node["Children"] as? [[String: Any]] {
                 traverseOriginal(nodes: children, prefix: "bookmark_bar", parentId: nil, parentUuid: nil)
             }
-            if let node = rootChildren.first(where: { ($0["Title"] as? String) == "BookmarksMenu" }), let children = node["Children"] as? [[String: Any]] {
-                traverseOriginal(nodes: children, prefix: "other", parentId: nil, parentUuid: nil)
+            // Same order as `read`: the menu, then the user's top-level entries.
+            let menuChildren = rootChildren.first(where: { ($0["Title"] as? String) == "BookmarksMenu" })?["Children"] as? [[String: Any]] ?? []
+            traverseOriginal(nodes: menuChildren, prefix: BookmarkRoots.other, parentId: nil, parentUuid: nil)
+            let rootEntries = rootChildren.filter(Self.isUserRootEntry)
+            traverseOriginal(nodes: rootEntries, prefix: BookmarkRoots.other, parentId: nil, parentUuid: nil)
+            for entry in rootEntries {
+                if let uuid = entry["WebBookmarkUUID"] as? String { rootLevelUuids.insert(uuid) }
+            }
+            if let mobile = rootChildren.first(where: Self.isMobileFolder), let children = mobile["Children"] as? [[String: Any]] {
+                traverseOriginal(nodes: children, prefix: BookmarkRoots.mobile, parentId: nil, parentUuid: nil)
             }
         } else {
             if let node = rootChildren.first(where: { ($0["Title"] as? String) == profileName }), let children = node["Children"] as? [[String: Any]] {
@@ -131,7 +142,13 @@ extension SafariParser {
         }
         
         let fBarChildren = buildTree(prefix: "bookmark_bar", parentId: nil)
-        var bMenuChildren = buildTree(prefix: "other", parentId: nil)
+        let otherChildren = buildTree(prefix: "other", parentId: nil)
+        let isRootLevel: ([String: Any]) -> Bool = { entry in
+            (entry["WebBookmarkUUID"] as? String).map { rootLevelUuids.contains($0) } ?? false
+        }
+        var bMenuChildren = otherChildren.filter { !isRootLevel($0) }
+        let rootLevelChildren = otherChildren.filter(isRootLevel)
+        let mobileChildren = profileName == "Default" ? buildTree(prefix: BookmarkRoots.mobile, parentId: nil) : []
         
         var newlyDeleted: [[String: Any]] = []
         for (uuid, origDict) in originalNodesByUuid {
@@ -158,21 +175,55 @@ extension SafariParser {
         }
         
         if profileName == "Default" {
-            if let idx = rootChildren.firstIndex(where: { ($0["Title"] as? String) == "BookmarksBar" }) {
-                var bar = rootChildren[idx]
-                bar["Children"] = fBarChildren
-                rootChildren[idx] = bar
-            } else {
-                rootChildren.append(["Title": "BookmarksBar", "WebBookmarkType": "WebBookmarkTypeList", "Children": fBarChildren])
+            // Rebuild the top level in place: Safari's own entries keep their
+            // positions, the user's top-level entries go back where the first
+            // of them was, and the mobile folder is created only when needed.
+            var newRootChildren: [[String: Any]] = []
+            var placedBar = false, placedMenu = false, placedRootLevel = false, placedMobile = false
+            for entry in rootChildren {
+                let title = entry["Title"] as? String
+                if title == "BookmarksBar" && !placedBar {
+                    var bar = entry
+                    bar["Children"] = fBarChildren
+                    newRootChildren.append(bar)
+                    placedBar = true
+                } else if title == "BookmarksMenu" && !placedMenu {
+                    var menu = entry
+                    menu["Children"] = bMenuChildren
+                    newRootChildren.append(menu)
+                    placedMenu = true
+                } else if Self.isMobileFolder(entry) && !placedMobile {
+                    var mobile = entry
+                    mobile["Children"] = mobileChildren
+                    newRootChildren.append(mobile)
+                    placedMobile = true
+                } else if Self.isUserRootEntry(entry) {
+                    if !placedRootLevel {
+                        newRootChildren.append(contentsOf: rootLevelChildren)
+                        placedRootLevel = true
+                    }
+                } else {
+                    newRootChildren.append(entry)
+                }
             }
-            
-            if let idx = rootChildren.firstIndex(where: { ($0["Title"] as? String) == "BookmarksMenu" }) {
-                var menu = rootChildren[idx]
-                menu["Children"] = bMenuChildren
-                rootChildren[idx] = menu
-            } else {
-                rootChildren.append(["Title": "BookmarksMenu", "WebBookmarkType": "WebBookmarkTypeList", "Children": bMenuChildren])
+            if !placedRootLevel {
+                newRootChildren.append(contentsOf: rootLevelChildren)
             }
+            if !placedBar {
+                newRootChildren.append(["Title": "BookmarksBar", "WebBookmarkType": "WebBookmarkTypeList", "Children": fBarChildren])
+            }
+            if !placedMenu {
+                newRootChildren.append(["Title": "BookmarksMenu", "WebBookmarkType": "WebBookmarkTypeList", "Children": bMenuChildren])
+            }
+            if !placedMobile && !mobileChildren.isEmpty {
+                newRootChildren.append([
+                    "Title": Self.newMobileFolderTitle,
+                    "WebBookmarkType": "WebBookmarkTypeList",
+                    "WebBookmarkUUID": newUuid(),
+                    "Children": mobileChildren
+                ])
+            }
+            rootChildren = newRootChildren
         } else {
             if let idx = rootChildren.firstIndex(where: { ($0["Title"] as? String) == profileName }) {
                 var profileNode = rootChildren[idx]

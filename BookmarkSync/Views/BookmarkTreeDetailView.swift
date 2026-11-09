@@ -7,6 +7,7 @@ struct BookmarkTreeDetailView: View {
     let configs: [BrowserConfig]
     @ObservedObject var viewModel: AppViewModel
     let revealInTree: (String) -> Void
+    let onDelete: (BookmarkItem) -> Void
 
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -35,9 +36,20 @@ struct BookmarkTreeDetailView: View {
                                 .font(.title3)
                                 .bold()
                                 .lineLimit(2)
-                            Text(item.type == .folder ? "Folder" : "Bookmark")
+                            Text(verbatim: L10n.text(item.type == .folder ? "Folder" : "Bookmark"))
                                 .font(.caption)
                                 .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+
+                        if BookmarksTreeView.canDelete(item) {
+                            Button(role: .destructive) {
+                                onDelete(item)
+                            } label: {
+                                Label("Delete…", systemImage: "trash")
+                            }
+                            .help("Delete from every synced browser")
                         }
                     }
                     .padding(.top, 10)
@@ -120,7 +132,7 @@ struct BookmarkTreeDetailView: View {
 
                             VStack(spacing: 8) {
                                 MetadataRow(label: "Node ID", value: item.id)
-                                MetadataRow(label: "Parent ID", value: item.parentId ?? "None")
+                                MetadataRow(label: "Parent ID", value: item.parentId ?? L10n.text("None"))
                                 MetadataRow(label: "Index", value: "\(item.index)")
                                 MetadataRow(label: "Last Modified", value: Self.dateFormatter.string(from: item.mtime))
                             }
@@ -166,8 +178,9 @@ struct BookmarkTreeDetailView: View {
                                 Spacer()
 
                                 // Status badge
-                                Text(status.rawValue)
+                                Text(verbatim: L10n.text(status.rawValue))
                                     .font(.caption2)
+                                    .fixedSize(horizontal: false, vertical: true)
                                     .bold()
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 3)
@@ -197,6 +210,7 @@ struct BookmarkTreeDetailView: View {
         case .mismatch: return .orange
         case .writePending: return .blue
         case .disabled: return .gray
+        case .notSyncedHere: return .gray
         case .unknown: return .secondary
         }
     }

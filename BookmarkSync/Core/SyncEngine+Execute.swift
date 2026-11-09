@@ -23,15 +23,7 @@ private func readProfiles(_ requests: [(configId: String, bundleId: String, prof
         for request in requests {
             group.addTask {
                 let url = URL(fileURLWithPath: request.path)
-                let parser: BrowserParser
-                switch request.bundleId {
-                case "com.apple.Safari":
-                    parser = SafariParser(filePath: url, profileName: request.profileName)
-                case "org.mozilla.firefox":
-                    parser = FirefoxParser(filePath: url)
-                default:
-                    parser = ChromeParser(filePath: url)
-                }
+                let parser = makeBookmarkParser(bundleId: request.bundleId, profileName: request.profileName, fileURL: url)
 
                 do {
                     let raw = try parser.read()
@@ -80,7 +72,7 @@ extension SyncEngine {
         viewModel.syncStatus = "Syncing..."
 
         let allConfigs = (try? modelContext.fetch(FetchDescriptor<BrowserConfig>())) ?? []
-        let enabledConfigs = allConfigs.filter { $0.isEnabled && $0.profileSetId != nil && !$0.profileSetId!.isEmpty }
+        let enabledConfigs = allConfigs.filter { $0.isEnabled && !viewModel.unavailableProfileIds.contains($0.id) && $0.profileSetId != nil && !$0.profileSetId!.isEmpty }
 
         updateWatcher(activeConfigs: enabledConfigs)
 
@@ -123,15 +115,37 @@ extension SyncEngine {
         }
 
         do {
+            // Stored ids must match the parsers' current scheme before anything
+            // is compared; a failure aborts this pass rather than syncing with
+            // half-migrated ids.
+            try BookmarkIdMigration.migrateIfNeeded(context: modelContext, viewModel: viewModel)
+
             let allConfigs = try modelContext.fetch(FetchDescriptor<BrowserConfig>())
-            let enabledConfigs = allConfigs.filter { $0.isEnabled && $0.profileSetId != nil && !$0.profileSetId!.isEmpty }
+            let enabledConfigs = allConfigs.filter { $0.isEnabled && !viewModel.unavailableProfileIds.contains($0.id) && $0.profileSetId != nil && !$0.profileSetId!.isEmpty }
 
             guard !enabledConfigs.isEmpty else {
                 viewModel.syncStatus = "Idle"
                 return
             }
 
+            // A hold only means something while its profile is still syncing.
+            let enabledIds = Set(enabledConfigs.map { $0.id })
+            let liveHolds = viewModel.deletionHolds.filter { enabledIds.contains($0.key) }
+            if liveHolds.count != viewModel.deletionHolds.count {
+                viewModel.deletionHolds = liveHolds
+            }
+
             let readsByConfig = Dictionary(reads.map { ($0.configId, $0) }, uniquingKeysWith: { first, _ in first })
+
+            // Profiles whose file could not be read this pass (Safari without Full
+            // Disk Access is reported separately and is not a read failure).
+            let failedReads = Set(enabledConfigs.filter { config in
+                readsByConfig[config.id] == nil &&
+                !(config.bundleId == "com.apple.Safari" && !viewModel.isFullDiskAccessGranted)
+            }.map { $0.id })
+            if failedReads != viewModel.readFailedConfigIds {
+                viewModel.readFailedConfigIds = failedReads
+            }
             let configsBySet = Dictionary(grouping: enabledConfigs, by: { $0.profileSetId! })
             let allStateNodes = try modelContext.fetch(FetchDescriptor<BookmarkNode>())
 
@@ -205,6 +219,15 @@ extension SyncEngine {
                         SyncLog.event("Initial sync for \(config.browserName) (\(config.profileName)): importing all local bookmarks")
                         isTriggered = true
                     }
+
+                    // 4. A held deletion, or the user's answer to one, must be
+                    // re-evaluated every pass, whatever the file's mtime says.
+                    if !isTriggered,
+                       viewModel.deletionHolds[config.id] != nil ||
+                       viewModel.approvedDeletions[config.id] != nil ||
+                       viewModel.rejectedDeletionHolds.contains(config.id) {
+                        isTriggered = true
+                    }
                     
                     if isTriggered {
                         triggeringConfigs.append(config)
@@ -228,14 +251,91 @@ extension SyncEngine {
                 /// quadratic.
                 var titlesToCancel = Set<String>()
                 var hasChanges = false
+                /// Profiles frozen this pass by `DeletionGuard`: nothing is
+                /// imported from them, written to them, or recorded as observed,
+                /// so the next pass compares against the same baseline again.
+                var heldConfigIds = Set<String>()
+
+                // One-off per profile: hubs written by versions that dropped
+                // empty folders lack the profile's existing ones, and the export
+                // below would delete them. See `EmptyFolderMigration`.
+                var migratedConfigIds = viewModel.migratedEmptyFolderConfigIds
+                for config in activeConfigs where !migratedConfigIds.contains(config.id) {
+                    guard let currentNodes = configCurrentNodes[config.id] else { continue }
+                    if config.lastSyncTime != nil {
+                        for folder in EmptyFolderMigration.emptyFolders(in: currentNodes) where stateById[folder.id] == nil {
+                            let node = BookmarkNode(
+                                id: folder.id,
+                                title: folder.title,
+                                type: .folder,
+                                parentId: folder.parentId,
+                                mtime: Date(),
+                                profileSetId: currentSetId,
+                                index: folder.index
+                            )
+                            stateById[node.id] = node
+                            modelContext.insert(node)
+                            hasChanges = true
+                            SyncLog.verbose("[Migrate] Restored empty folder \(folder.title) (\(folder.id)) to Hub")
+                        }
+                    }
+                    migratedConfigIds.insert(config.id)
+                }
+                if migratedConfigIds != viewModel.migratedEmptyFolderConfigIds {
+                    viewModel.migratedEmptyFolderConfigIds = migratedConfigIds
+                }
 
                 for config in triggeringConfigs {
                     guard let currentNodes = configCurrentNodes[config.id] else { continue }
                     let latestDict = previousLatestNodes[config.id] ?? [:]
                     let currentDict = Dictionary(currentNodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
+                    // 0. Guard against a misread file or an unusually large
+                    // deletion spreading to every other browser.
+                    var applyDeletions = config.lastSyncTime != nil
+                    if applyDeletions {
+                        if viewModel.rejectedDeletionHolds.remove(config.id) != nil {
+                            // The user chose to keep these bookmarks: leave the hub
+                            // intact and let the export write them back.
+                            applyDeletions = false
+                            viewModel.approvedDeletions[config.id] = nil
+                            SyncLog.event("[Guard] \(config.browserName) (\(config.profileName)): deletion rejected by user, restoring from hub")
+                        } else {
+                            let deletedIds = Set(latestDict.keys).subtracting(currentDict.keys)
+                            let verdict = DeletionGuard.evaluate(
+                                previousCount: latestDict.count,
+                                currentCount: currentDict.count,
+                                deletedIds: deletedIds,
+                                approvedIds: viewModel.approvedDeletions[config.id] ?? []
+                            )
+                            switch verdict {
+                            case .hold(let reason):
+                                heldConfigIds.insert(config.id)
+                                let hold = PendingDeletionHold(
+                                    configId: config.id,
+                                    browserName: config.browserName,
+                                    profileName: config.profileName,
+                                    reason: reason,
+                                    deletedIds: deletedIds,
+                                    previousCount: latestDict.count,
+                                    diff: BookmarkDiff(old: Array(latestDict.values), new: currentNodes)
+                                )
+                                if viewModel.deletionHolds[config.id] != hold {
+                                    viewModel.deletionHolds[config.id] = hold
+                                }
+                                SyncLog.event("[Guard] \(config.browserName) (\(config.profileName)): holding \(deletedIds.count) of \(latestDict.count) deletion(s) (\(reason)) until the user confirms")
+                                continue
+                            case .allow:
+                                if viewModel.deletionHolds[config.id] != nil {
+                                    viewModel.deletionHolds[config.id] = nil
+                                }
+                                viewModel.approvedDeletions[config.id] = nil
+                            }
+                        }
+                    }
+
                     // 1. Handle Deletions
-                    if config.lastSyncTime != nil {
+                    if applyDeletions {
                         for (id, latestNode) in latestDict {
                             guard currentDict[id] == nil, let stateNode = stateById[id] else { continue }
 
@@ -320,21 +420,7 @@ extension SyncEngine {
                     viewModel.cancelPendingDiffs(forTitles: titlesToCancel)
                 }
 
-                var updatedStateNodes = Array(stateById.values)
-                
-                // Clean up empty folders from Hub
-                let filteredNodes = filterEmptyFolders(nodes: updatedStateNodes)
-                if filteredNodes.count < updatedStateNodes.count {
-                    let filteredIds = Set(filteredNodes.map { $0.id })
-                    for node in updatedStateNodes {
-                        if !filteredIds.contains(node.id) {
-                            modelContext.delete(node)
-                            hasChanges = true
-                            SyncLog.verbose("[Import] Filtered out empty folder \(node.title) (\(node.id))")
-                        }
-                    }
-                    updatedStateNodes = filteredNodes
-                }
+                let updatedStateNodes = Array(stateById.values)
                 
                 // Normalize indexes to resolve any collisions
                 var parentGroups: [String: [BookmarkNode]] = [:]
@@ -391,6 +477,9 @@ extension SyncEngine {
 
                 for config in activeConfigs {
                     guard let currentNodes = configCurrentNodes[config.id] else { continue }
+                    // Writing the hub back would silently undo a deletion the
+                    // user has not decided on yet.
+                    if heldConfigIds.contains(config.id) { continue }
                     let currentDict = Dictionary(currentNodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
                     // One activity row per change, collected here and published in
@@ -404,7 +493,13 @@ extension SyncEngine {
                         changeTitles.append(title)
                     }
 
+                    // Bookmarks under a root this browser does not have can never
+                    // be written to it; comparing them would only re-queue the
+                    // same write forever. See `BookmarkRoots`.
+                    let supportedRoots = BookmarkRoots.supported(bundleId: config.bundleId, profileName: config.profileName)
+
                     for (id, stateNode) in stateDict {
+                        guard supportedRoots.contains(BookmarkRoots.root(of: id)) else { continue }
                         if let currentNode = currentDict[id] {
                             if currentNode.title != stateNode.title || currentNode.url != stateNode.url || currentNode.parentId != stateNode.parentId {
                                 noteChange("Update: \(stateNode.title)")

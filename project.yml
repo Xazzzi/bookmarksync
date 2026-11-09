@@ -1,5 +1,6 @@
 name: BookmarkSync
 options:
+  developmentLanguage: en
   bundleIdPrefix: app.xazi
   makeSharedSchemes: true
 packages:
@@ -19,6 +20,8 @@ targets:
       path: BookmarkSync/Info.plist
       properties:
         LSUIElement: true
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, zh-Hans]
         CFBundleIdentifier: app.xazi.BookmarkSync
         CFBundleName: BookmarkSync
         CFBundleShortVersionString: 1.1.0

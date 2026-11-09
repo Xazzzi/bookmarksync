@@ -201,9 +201,10 @@ final class BookmarkSyncTests: XCTestCase {
         XCTAssertEqual(children.count, 1)
         XCTAssertEqual(children.first?["name"] as? String, "Google")
         
-        // 4. Backup should have been created
-        let backupURL = tempJSONURL.deletingLastPathComponent().appendingPathComponent("\(uniqueName).json.backup.1")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: backupURL.path))
+        // 4. A timestamped backup should have been created
+        let backups = BackupStore.listBackups(for: tempJSONURL)
+        XCTAssertEqual(backups.count, 1)
+        XCTAssertEqual(backups.first?.kind, .timestamped)
     }
     
     @MainActor

@@ -6,3 +6,8 @@ BookmarkSync.xcodeproj/
 .derived-data-log-*
 Bookmarks
 Website/assets/BookmarkSync.dmg
+
+# Private signing material stays out of Git; the public certificate lives in signing/.
+*.p12
+*.pfx
+*.key

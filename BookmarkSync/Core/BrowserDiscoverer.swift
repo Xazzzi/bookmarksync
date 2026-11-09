@@ -23,7 +23,8 @@ class BrowserDiscoverer {
             let bookmarksPath = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Safari/Bookmarks.plist").path
             if FileManager.default.fileExists(atPath: bookmarksPath) {
                 do {
-                    let data = try Data(contentsOf: URL(fileURLWithPath: bookmarksPath))
+                    // Reading the file proves Full Disk Access.
+                    _ = try Data(contentsOf: URL(fileURLWithPath: bookmarksPath))
                     isSafariAccessGranted = true
 
                     profiles.append(DiscoveredProfile(
@@ -34,26 +35,9 @@ class BrowserDiscoverer {
                         appPath: safariPath
                     ))
 
-                    if let plist = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
-                       let children = plist["Children"] as? [[String: Any]] {
-
-                        let systemTitles = ["History", "BookmarksBar", "BookmarksMenu", "com.apple.ReadingList"]
-
-                        for child in children {
-                            if child["WebBookmarkType"] as? String == "WebBookmarkTypeList",
-                               let title = child["Title"] as? String,
-                               !systemTitles.contains(title),
-                               !title.isEmpty {
-                                profiles.append(DiscoveredProfile(
-                                    bundleId: "com.apple.Safari",
-                                    browserName: "Safari",
-                                    profileName: title,
-                                    bookmarkFilePath: bookmarksPath,
-                                    appPath: safariPath
-                                ))
-                            }
-                        }
-                    }
+                    // Folders at the top level of Safari's bookmarks are the
+                    // user's own folders and are synced as part of this
+                    // profile; they are not separate profiles.
                 } catch {
                     isSafariAccessGranted = false
                     print("Failed to read Safari Bookmarks.plist: \(error)")
@@ -95,6 +79,11 @@ class BrowserDiscoverer {
                 }
 
                 for (dirName, displayName) in profileMap {
+                    // Only the local Bookmarks file. A profile signed in to a
+                    // Google Account without Chrome sync also has AccountBookmarks;
+                    // Chrome rebuilds that file from the account's server copy and
+                    // discards edits made to it, so it must never be synced by
+                    // rewriting it (tried and reverted, 2026-10-16).
                     let bPath = supportPath.appendingPathComponent(dirName).appendingPathComponent("Bookmarks").path
                     if FileManager.default.fileExists(atPath: bPath) {
                         var finalDisplayName = displayName
