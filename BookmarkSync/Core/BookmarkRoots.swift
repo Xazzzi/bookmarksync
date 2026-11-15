@@ -26,6 +26,9 @@ enum BookmarkRoots {
             return profileName == "Default" ? [bar, other, mobile] : [bar]
         case "org.mozilla.firefox":
             return [bar, other]
+        case "com.officecommun.search":
+            // Search's top level is its bookmarks bar; it has no other roots.
+            return [bar]
         default:
             return [bar, other, mobile]
         }

@@ -95,7 +95,7 @@ struct TrayMenuActivityView: View {
                                     ForEach(Array(diff.sourceBundleIds.enumerated()), id: \.element) { index, bid in
                                         if let icon = BrowserDiscoverer.getIcon(for: bid) {
                                             let profileName = index < diff.sourceProfileNames.count ? diff.sourceProfileNames[index] : ""
-                                            let browserName = bid == "com.apple.Safari" ? "Safari" : (bid == "com.google.Chrome" ? "Chrome" : (bid == "org.mozilla.firefox" ? "Firefox" : bid))
+                                            let browserName = bid == "com.apple.Safari" ? "Safari" : (bid == "com.google.Chrome" ? "Chrome" : (bid == "org.mozilla.firefox" ? "Firefox" : (bid == "com.officecommun.search" ? "Search" : bid)))
                                             let tooltip = profileName.isEmpty ? browserName : "\(browserName) (\(profileName))"
                                             Image(nsImage: icon)
                                                 .resizable()
@@ -119,7 +119,7 @@ struct TrayMenuActivityView: View {
                                     ForEach(Array(diff.targetBundleIds.enumerated()), id: \.element) { index, bid in
                                         if let icon = BrowserDiscoverer.getIcon(for: bid) {
                                             let profileName = index < diff.targetProfileNames.count ? diff.targetProfileNames[index] : ""
-                                            let browserName = bid == "com.apple.Safari" ? "Safari" : (bid == "com.google.Chrome" ? "Chrome" : (bid == "org.mozilla.firefox" ? "Firefox" : bid))
+                                            let browserName = bid == "com.apple.Safari" ? "Safari" : (bid == "com.google.Chrome" ? "Chrome" : (bid == "org.mozilla.firefox" ? "Firefox" : (bid == "com.officecommun.search" ? "Search" : bid)))
                                             let tooltip = profileName.isEmpty ? browserName : "\(browserName) (\(profileName))"
                                             Image(nsImage: icon)
                                                 .resizable()

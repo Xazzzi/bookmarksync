@@ -176,6 +176,22 @@ class BrowserDiscoverer {
             }
         }
 
+        // 4. Search (Office Commun). Its Personal profile only; other Search
+        // profiles keep their bookmarks in separate files that are not listed.
+        if let appUrl = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.officecommun.search") {
+            let bPath = URL(fileURLWithPath: NSHomeDirectory())
+                .appendingPathComponent("Library/Application Support/Search/bookmarks.json").path
+            if FileManager.default.fileExists(atPath: bPath) {
+                profiles.append(DiscoveredProfile(
+                    bundleId: "com.officecommun.search",
+                    browserName: "Search",
+                    profileName: "Default",
+                    bookmarkFilePath: bPath,
+                    appPath: appUrl.path
+                ))
+            }
+        }
+
         return profiles
     }
 

@@ -1,7 +1,7 @@
 # BookmarkSync Design Document
 
 ## 1. Overview
-BookmarkSync is a local-only, serverless macOS application designed to synchronize bookmarks between multiple browsers (Safari, Chromium-based, Firefox). Instead of relying on cloud APIs, it operates directly on the local bookmark files used by these browsers, merging changes and relying on the browsers' native sync mechanisms (Google Sync, iCloud, Firefox Sync) to propagate changes to other devices.
+BookmarkSync is a local-only, serverless macOS application designed to synchronize bookmarks between multiple browsers (Safari, Chromium-based, Firefox, Search). Instead of relying on cloud APIs, it operates directly on the local bookmark files used by these browsers, merging changes and relying on the browsers' native sync mechanisms (Google Sync, iCloud, Firefox Sync) to propagate changes to other devices.
 
 ## 2. Goals & Non-Goals
 ### Goals
@@ -38,6 +38,11 @@ The application runs as a macOS Menu Bar (Tray) app and consists of five main co
 *   **Format**: SQLite database (`places.sqlite`).
 *   **Structure**: Contains `moz_bookmarks` and `moz_places` tables.
 
+### Search (Office Commun)
+*   **Format**: JSON, `~/Library/Application Support/Search/bookmarks.json` (Personal profile only).
+*   **Structure**: A top-level array of `{id, title, url?, children?}`; a folder has `children` and no `url`. There are no fixed root folders: the top level is what Search's bookmarks bar shows, so it is read as the `bookmark_bar` root and Search holds nothing under `other` or `synced`.
+*   **Writes**: Search keeps its bookmarks in memory and rewrites the file on every change, so writes wait until Search quits, like any other browser. Existing entries keep their `id`; Search has no modification times, so every node reads as the epoch (as Safari's do).
+
 ## 5. Synchronization Logic (N-Way Merge)
 To sync accurately across multiple browsers, the app uses an SQLite database as the central source of truth.
 
@@ -61,6 +66,7 @@ Browsers have different default top-level folders. We need a standardized mappin
 *   **Bookmarks Bar**: Chrome (`bookmark_bar`) <-> Safari (`FavoritesBar`) <-> Firefox (`toolbar`)
 *   **Other Bookmarks**: Chrome (`other`) <-> Safari (`BookmarksMenu` / Unsorted) <-> Firefox (`unfiled`)
 *   **Mobile Bookmarks**: Chrome (`synced`) <-> Safari (iCloud) <-> Firefox (`mobile`)
+*   **Search**: its whole top level is mapped to the Bookmarks Bar only.
 
 ## 7. Lifecycle and Safety Constraints
 **Execution Flow**:

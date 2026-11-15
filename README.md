@@ -2,7 +2,7 @@
 
 [简体中文说明](README.zh-CN.md) · English
 
-A local-first, serverless macOS tray application that dynamically synchronizes bookmarks across multiple browsers (Safari, Chromium-based browsers, and Firefox) without relying on external cloud APIs or databases. 
+A local-first, serverless macOS tray application that dynamically synchronizes bookmarks across multiple browsers (Safari, Chromium-based browsers, Firefox, and Search) without relying on external cloud APIs or databases. 
 
 By directly merging local browser bookmark files, it leverages each browser's native cloud synchronization mechanisms (iCloud, Google Sync, Firefox Sync) to seamlessly propagate updates to all of your other devices.
 
@@ -36,6 +36,7 @@ graph TD
     Parsers --> Safari[SafariParser plist]
     Parsers --> Chrome[ChromeParser JSON]
     Parsers --> Firefox[FirefoxParser SQLite]
+    Parsers --> Search[SearchParser JSON]
     WQ --> Files[Browser Files]
 ```
 
@@ -55,7 +56,8 @@ graph TD
 │   │   ├── BrowserParser.swift   # Read/Write protocol
 │   │   ├── ChromeParser.swift    # JSON decoder & WebKit timestamp parser
 │   │   ├── SafariParser.swift    # Plist decoder & URIDictionary writer
-│   │   └── FirefoxParser.swift   # SQLite wrapper (places.sqlite)
+│   │   ├── FirefoxParser.swift   # SQLite wrapper (places.sqlite)
+│   │   └── SearchParser.swift    # Search browser's bookmarks.json
 │   └── Views/
 │       └── BackupsView.swift     # Dynamic backups restoration manager
 ├── project.yml                   # XcodeGen declaration & build configuration

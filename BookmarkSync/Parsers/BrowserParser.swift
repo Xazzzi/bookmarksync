@@ -35,6 +35,8 @@ func makeBookmarkParser(bundleId: String, profileName: String, fileURL: URL) -> 
         return SafariParser(filePath: fileURL, profileName: profileName)
     case "org.mozilla.firefox":
         return FirefoxParser(filePath: fileURL)
+    case "com.officecommun.search":
+        return SearchParser(filePath: fileURL)
     default:
         return ChromeParser(filePath: fileURL)
     }
