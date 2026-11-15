@@ -17,6 +17,7 @@ graph TD
     Parsers --> Safari[SafariParser plist]
     Parsers --> Chrome[ChromeParser JSON]
     Parsers --> Firefox[FirefoxParser SQLite]
+    Parsers --> Search[SearchParser JSON]
     WQ --> Files[Browser Files]
 ```
 
