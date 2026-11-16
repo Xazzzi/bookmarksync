@@ -147,3 +147,8 @@ Only generated group labels and activity prefixes are translated for display.
   * Profile discovery that keeps unavailable profiles instead of deleting them.
   * Deleting bookmarks from the bookmarks window, write-wait banner, and version display.
   * macOS CI workflow with persistent-certificate signing.
+
+### Not yet released
+
+* [l0rdex](https://github.com/l0rdex):
+  * Search browser support.
