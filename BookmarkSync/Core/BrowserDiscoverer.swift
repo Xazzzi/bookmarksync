@@ -201,4 +201,14 @@ class BrowserDiscoverer {
         }
         return nil
     }
+
+    static func displayName(for bundleId: String) -> String {
+        switch bundleId {
+        case "com.apple.Safari": return "Safari"
+        case "com.google.Chrome": return "Chrome"
+        case "org.mozilla.firefox": return "Firefox"
+        case "com.officecommun.search": return "Search"
+        default: return bundleId
+        }
+    }
 }
