@@ -11,3 +11,4 @@ Website/assets/BookmarkSync.dmg
 *.p12
 *.pfx
 *.key
+.wrangler/
