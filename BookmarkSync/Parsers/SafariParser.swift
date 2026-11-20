@@ -27,6 +27,14 @@ final class SafariParser: BrowserParser {
             && mobileFolderTitles.contains(entry["Title"] as? String ?? "")
     }
 
+    /// Safari keeps a leaf's title in `URIDictionary.title`, often with no top-level `Title` key.
+    static func nodeTitle(in dict: [String: Any]) -> String? {
+        if let title = dict["Title"] as? String {
+            return title
+        }
+        return (dict["URIDictionary"] as? [String: Any])?["title"] as? String
+    }
+
     /// A folder or bookmark the user keeps directly at the top level of
     /// Safari's bookmarks (beside Favorites). Safari stores these as siblings of
     /// its fixed roots; they are read as part of "other".
@@ -34,7 +42,7 @@ final class SafariParser: BrowserParser {
         let type = entry["WebBookmarkType"] as? String
         guard type == "WebBookmarkTypeList" || type == "WebBookmarkTypeLeaf" else { return false }
         if entry["ShouldOmitFromUI"] as? Bool == true { return false }
-        let title = entry["Title"] as? String ?? ""
+        let title = nodeTitle(in: entry) ?? ""
         if title.isEmpty || title.hasPrefix("com.apple.") { return false }
         if systemRootTitles.contains(title) || title == deletedFolderTitle { return false }
         return !isMobileFolder(entry)
@@ -100,8 +108,7 @@ final class SafariParser: BrowserParser {
         var nodes: [ParsedBookmark] = []
         
         let type = dict["WebBookmarkType"] as? String
-        let uriDict = dict["URIDictionary"] as? [String: Any]
-        let title = dict["Title"] as? String ?? uriDict?["title"] as? String ?? "Unknown"
+        let title = Self.nodeTitle(in: dict) ?? "Unknown"
         
         if type == "WebBookmarkTypeList" {
             let normalized = title

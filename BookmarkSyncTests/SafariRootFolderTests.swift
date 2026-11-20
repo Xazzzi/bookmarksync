@@ -160,4 +160,15 @@ final class SafariRootFolderTests: XCTestCase {
         XCTAssertTrue(SafariParser.isUserRootEntry(list("Untitled Folder", [])))
         XCTAssertTrue(SafariParser.isUserRootEntry(leaf("Loose", "https://loose.com/")))
     }
+
+    /// Safari often stores a leaf's title only in `URIDictionary`.
+    func testTopLevelLeafWithoutTitleKeyIsRead() throws {
+        var loose = leaf("Loose", "https://loose.com/")
+        loose.removeValue(forKey: "Title")
+        try writeFixture([list("BookmarksBar", []), list("BookmarksMenu", []), loose])
+
+        let nodes = try parser.read()
+        XCTAssertEqual(nodes.map(\.id), ["other:loose.com"])
+        XCTAssertEqual(nodes.first?.title, "Loose")
+    }
 }
