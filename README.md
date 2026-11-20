@@ -147,8 +147,10 @@ Only generated group labels and activity prefixes are translated for display.
   * Profile discovery that keeps unavailable profiles instead of deleting them.
   * Deleting bookmarks from the bookmarks window, write-wait banner, and version display.
   * macOS CI workflow with persistent-certificate signing.
-
-### Not yet released
-
 * [l0rdex](https://github.com/l0rdex):
   * Search browser support.
+* [blurryface1](https://github.com/blurryface1):
+  * Preserving Safari iCloud sync metadata across writes.
+  * Skipping syncs when a bookmark file is rewritten without bookmark changes.
+  * Dropping queued writes whose bookmark file changed since it was read.
+  * Safari bookmark titles stored only in `URIDictionary`.
