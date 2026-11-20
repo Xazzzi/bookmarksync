@@ -113,6 +113,10 @@ class WriteQueue {
                         self?.viewModel?.queueError = nil
                         self?.viewModel?.markBrowserSynced(bundleId: bundleId)
                     }
+                } catch let error as SafariBookmarksLock.LockError {
+                    // Held for a second or two at a time; the next flush retries.
+                    SyncLog.event("WriteQueue: deferring \(pending.bundleId) write: \(error.localizedDescription)")
+                    remaining.append(pending)
                 } catch {
                     SyncLog.error("Write failed for \(pending.bundleId): \(error)")
                     DispatchQueue.main.async { [weak self] in

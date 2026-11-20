@@ -156,6 +156,15 @@ enum BackupStore {
     /// The caller must make sure the browser is not running: a running browser
     /// keeps its bookmarks in memory and overwrites the restored file.
     static func restore(_ backup: BackupEntry, over liveURL: URL, now: Date = Date()) throws {
+        // Safari's iCloud agent runs while Safari is closed; respect its lock.
+        if liveURL.lastPathComponent == "Bookmarks.plist" {
+            try SafariBookmarksLock(bookmarksFile: liveURL).withLock { try replaceLive(liveURL, with: backup, now: now) }
+        } else {
+            try replaceLive(liveURL, with: backup, now: now)
+        }
+    }
+
+    private static func replaceLive(_ liveURL: URL, with backup: BackupEntry, now: Date) throws {
         let fm = FileManager.default
         try createBackup(of: liveURL, now: now)
 
