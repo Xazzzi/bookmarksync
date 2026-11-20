@@ -6,6 +6,8 @@ private struct ProfileRead: Sendable {
     let configId: String
     let parser: BrowserParser
     let nodes: [ParsedBookmark]
+    /// Fingerprint of the unprefixed tree, as `parser.read()` returns it.
+    let diskFingerprint: String
 }
 
 /// Reads every requested profile's bookmark file. Free of SwiftData and of the
@@ -39,7 +41,12 @@ private func readProfiles(_ requests: [(configId: String, bundleId: String, prof
                             index: node.index
                         )
                     }
-                    return ProfileRead(configId: request.configId, parser: parser, nodes: prefixed)
+                    return ProfileRead(
+                        configId: request.configId,
+                        parser: parser,
+                        nodes: prefixed,
+                        diskFingerprint: BookmarkSnapshotFingerprint.compute(raw)
+                    )
                 } catch {
                     SyncLog.error("Failed to read \(request.bundleId) (\(request.profileName)) - skipping: \(error)")
                     return nil
@@ -152,11 +159,13 @@ extension SyncEngine {
             for (currentSetId, activeConfigs) in configsBySet {
                 var configCurrentNodes: [String: [ParsedBookmark]] = [:]
                 var configParsers: [String: BrowserParser] = [:]
+                var diskFingerprints: [String: String] = [:]
 
                 for config in activeConfigs {
                     guard let read = readsByConfig[config.id] else { continue }
                     configParsers[config.id] = read.parser
                     configCurrentNodes[config.id] = read.nodes
+                    diskFingerprints[config.id] = read.diskFingerprint
                 }
                 
                 let stateNodes = allStateNodes.filter { $0.profileSetId == currentSetId }
@@ -189,6 +198,8 @@ extension SyncEngine {
                 
                 // Identify triggering profiles (local changes to import)
                 var triggeringConfigs: [BrowserConfig] = []
+                /// Profiles whose file was rewritten with the same bookmarks.
+                var metadataOnlyConfigIds = Set<String>()
                 for config in activeConfigs {
                     var isTriggered = false
                     
@@ -222,13 +233,28 @@ extension SyncEngine {
 
                     // 4. A held deletion, or the user's answer to one, must be
                     // re-evaluated every pass, whatever the file's mtime says.
-                    if !isTriggered,
-                       viewModel.deletionHolds[config.id] != nil ||
-                       viewModel.approvedDeletions[config.id] != nil ||
-                       viewModel.rejectedDeletionHolds.contains(config.id) {
+                    let hasDeletionHoldState =
+                        viewModel.deletionHolds[config.id] != nil ||
+                        viewModel.approvedDeletions[config.id] != nil ||
+                        viewModel.rejectedDeletionHolds.contains(config.id)
+                    if !isTriggered, hasDeletionHoldState {
                         isTriggered = true
                     }
-                    
+
+                    // 5. A rewrite that kept the same bookmarks (e.g. Safari's sync
+                    // agent updating its metadata) is not a local change to import.
+                    if isTriggered,
+                       !hasDeletionHoldState,
+                       config.lastSyncTime != nil,
+                       let currentNodes = configCurrentNodes[config.id],
+                       let previousMap = previousLatestNodes[config.id],
+                       !previousMap.isEmpty,
+                       BookmarkSnapshotFingerprint.compute(currentNodes) == BookmarkSnapshotFingerprint.compute(Array(previousMap.values)) {
+                        SyncLog.verbose("\(config.browserName) (\(config.profileName)) rewritten without bookmark changes; not importing")
+                        isTriggered = false
+                        metadataOnlyConfigIds.insert(config.id)
+                    }
+
                     if isTriggered {
                         triggeringConfigs.append(config)
                     }
@@ -569,7 +595,12 @@ extension SyncEngine {
                                 }
                             }
                             if let cleanNodes = cleanNodesForWrite {
-                                WriteQueue.shared.enqueue(parser: parser, nodes: cleanNodes, bundleId: config.bundleId)
+                                WriteQueue.shared.enqueue(
+                                    parser: parser,
+                                    nodes: cleanNodes,
+                                    bundleId: config.bundleId,
+                                    expectedDiskFingerprint: diskFingerprints[config.id]
+                                )
                             }
                         }
                     }
@@ -596,7 +627,9 @@ extension SyncEngine {
                         config.observedStateData = data
                     }
 
-                    if config.lastSyncTime == nil || hasMismatch {
+                    // Advancing lastSyncTime past a metadata-only rewrite stops
+                    // the mtime check from re-triggering on it every pass.
+                    if config.lastSyncTime == nil || hasMismatch || metadataOnlyConfigIds.contains(config.id) {
                         config.lastSyncTime = Date()
                         try? modelContext.save()
                     }

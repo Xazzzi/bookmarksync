@@ -19,6 +19,12 @@ class SyncEngine {
     init(modelContext: ModelContext, viewModel: AppViewModel) {
         self.modelContext = modelContext
         self.viewModel = viewModel
+        // Bypasses triggerSync: its own-write filter would drop this path.
+        WriteQueue.shared.onWriteConflict = { [weak self] filePath in
+            Task { @MainActor [weak self] in
+                self?.executeSync(changedPaths: [filePath.path])
+            }
+        }
     }
     
     func triggerSync(changedPaths: [String], forceImmediate: Bool = false) {
