@@ -1,3 +1,11 @@
+1.4.0
+- Search browser support
+- Chrome's encrypted bookmarks are read and written directly; macOS asks for access to Chrome's Keychain key after you allow it in the menu bar
+- Safari bookmarks keep their iCloud sync data when BookmarkSync updates them
+- Safari writes wait for Safari's own bookmarks lock instead of racing its iCloud sync
+- Bookmark files rewritten without bookmark changes no longer trigger a sync
+- A pending write is dropped and re-synced if its bookmark file changed in the meantime
+- Safari bookmarks kept directly at the top level sync even without a stored title
 1.3.0
 - Ukrainian, Spanish and Simplified Chinese interface
 - Optional weekly check for new versions
