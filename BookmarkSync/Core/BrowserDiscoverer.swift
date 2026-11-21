@@ -84,8 +84,9 @@ class BrowserDiscoverer {
                     // Chrome rebuilds that file from the account's server copy and
                     // discards edits made to it, so it must never be synced by
                     // rewriting it (tried and reverted, 2026-10-16).
+                    // Encrypted-only profiles are kept under the `Bookmarks` path too.
                     let bPath = supportPath.appendingPathComponent(dirName).appendingPathComponent("Bookmarks").path
-                    if FileManager.default.fileExists(atPath: bPath) {
+                    if ChromiumEncryptedBookmarks.storagePaths(for: bPath).contains(where: { FileManager.default.fileExists(atPath: $0) }) {
                         var finalDisplayName = displayName
                         if finalDisplayName == "Default" || finalDisplayName.trimmingCharacters(in: .whitespaces).isEmpty {
                             let authPath = supportPath.appendingPathComponent(dirName).appendingPathComponent("auth_account").path

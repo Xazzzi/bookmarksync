@@ -4,13 +4,54 @@ import Foundation
 
 final class ChromeParser: BrowserParser {
     let filePath: URL
-    
-    init(filePath: URL) {
+    /// Chrome's encrypted copy of `filePath`, read and written instead of it when present.
+    let encrypted: ChromiumEncryptedBookmarks?
+
+    init(filePath: URL, encrypted: ChromiumEncryptedBookmarks? = nil) {
         self.filePath = filePath
+        self.encrypted = encrypted
     }
-    
+
+    /// The JSON Chrome itself loads: the encrypted file when it exists.
+    func loadJSON() throws -> Data {
+        if let encrypted, encrypted.exists {
+            return try encrypted.readJSON()
+        }
+        return try Data(contentsOf: filePath)
+    }
+
+    /// Writes `json` where Chrome loads it from.
+    /// The plain file, if still there, gets the same JSON so the two never disagree.
+    func store(_ json: Data) throws {
+        guard let encrypted, encrypted.exists else {
+            try json.write(to: filePath, options: .atomic)
+            return
+        }
+        try encrypted.write(json: json)
+        if FileManager.default.fileExists(atPath: filePath.path) {
+            try writePrivately(json, to: filePath)
+        }
+    }
+
+    @discardableResult
+    func createBackup(manual: Bool) throws -> URL? {
+        guard let encrypted, encrypted.exists else {
+            return try BackupStore.createBackup(of: filePath, manual: manual)
+        }
+        return try BackupStore.createBackup(of: filePath, contents: encrypted.readJSON(), manual: manual)
+    }
+
+    func restore(_ backup: BackupEntry) throws {
+        guard let encrypted, encrypted.exists else {
+            return try BackupStore.restore(backup, over: filePath)
+        }
+        let json = try Data(contentsOf: backup.url)
+        try createBackup(manual: false)
+        try store(json)
+    }
+
     func read() throws -> [ParsedBookmark] {
-        let data = try Data(contentsOf: filePath)
+        let data = try loadJSON()
         let bookmarks = try JSONDecoder().decode(ChromeBookmarks.self, from: data)
         var result: [ParsedBookmark] = []
         
@@ -102,7 +143,7 @@ final class ChromeParser: BrowserParser {
         // lookups instead of rescanning every node per folder.
         let childIndex = BookmarkChildIndex(strippedNodes: strippedNodes)
         
-        let data = try Data(contentsOf: filePath)
+        let data = try loadJSON()
         guard var root = try JSONSerialization.jsonObject(with: data, options: .mutableContainers) as? [String: Any] else {
             throw NSError(domain: "ChromeParser", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to parse JSON"])
         }
@@ -323,6 +364,6 @@ final class ChromeParser: BrowserParser {
         root.removeValue(forKey: "checksum")
         
         let outData = try JSONSerialization.data(withJSONObject: root, options: .prettyPrinted)
-        try outData.write(to: filePath, options: .atomic)
+        try store(outData)
     }
 }

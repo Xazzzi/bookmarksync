@@ -90,7 +90,8 @@ class SyncEngine {
         newWatcher.callback = { [weak self] paths in
             guard let self = self else { return }
             Task { @MainActor in
-                let relevantPaths = paths.filter { path in
+                // Reported under the `Bookmarks` path so the own-write filter applies.
+                let relevantPaths = paths.map { ChromiumEncryptedBookmarks.plainPath(forEncrypted: $0) ?? $0 }.filter { path in
                     activeFilePaths.contains(path) ||
                     activeFilePaths.contains((path as NSString).appendingPathComponent("Bookmarks")) ||
                     activeFilePaths.contains((path as NSString).appendingPathComponent("Bookmarks.plist")) ||

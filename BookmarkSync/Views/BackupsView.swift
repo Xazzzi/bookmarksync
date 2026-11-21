@@ -222,7 +222,8 @@ struct BackupsView: View {
     private func backUpNow() {
         guard let config = selectedConfig else { return }
         do {
-            if try BackupStore.createBackup(of: URL(fileURLWithPath: config.bookmarkFilePath), manual: true) != nil {
+            let parser = makeBookmarkParser(bundleId: config.bundleId, profileName: config.profileName, fileURL: URL(fileURLWithPath: config.bookmarkFilePath))
+            if try parser.createBackup(manual: true) != nil {
                 alertMessage = L10n.format("Backed up %@ - %@.", config.browserName, config.profileName)
             } else {
                 alertMessage = L10n.text("There is no bookmark file to back up.")
@@ -277,7 +278,8 @@ struct BackupsView: View {
         }
 
         do {
-            try BackupStore.restore(backup, over: URL(fileURLWithPath: config.bookmarkFilePath))
+            let parser = makeBookmarkParser(bundleId: config.bundleId, profileName: config.profileName, fileURL: URL(fileURLWithPath: config.bookmarkFilePath))
+            try parser.restore(backup)
             alertMessage = L10n.format("Restored the backup from %@. Bookmarks it lacks will also be removed from your other browsers; a large removal is held in the menu bar for your confirmation first.", formattedDate(backup.date))
             showAlert = true
             loadBackups()

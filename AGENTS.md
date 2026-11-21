@@ -89,3 +89,11 @@ graph TD
   - **Title-Based Folder IDs**: `SafariParser` and `FirefoxParser` now explicitly generate unique folder IDs based on their title (name), perfectly aligning with Chrome's approach. Same-named folders now cleanly merge natively in the Hub.
   - **Robust Prefix Stripping**: `BookmarkNode.stripProfileSetPrefix` was hardened using segment-splitting (max 2 splits) to prevent folder names containing colons (e.g., `My: Folder`) from corrupting the ID routing logic.
   - **Updates Trump Deletes**: Deletions are now strictly validated against `observedStateData`. If a profile attempts to delete a node that has been modified (renamed/moved) by another profile since its last sync, the deletion is rejected and the node is preserved or resurrected.
+
+### H. Chrome Encrypted Bookmarks
+- **The Issue**: Chrome (158 here) writes `EncryptedBookmarks2` beside `Bookmarks`, loads only the encrypted file when it exists, and overwrites `Bookmarks` from it on launch. Edits written to `Bookmarks` alone were silently reverted, which then looked like deletions in Chrome. A later Chrome stage stops writing `Bookmarks` and deletes it.
+- **The Fix**:
+  - `ChromiumEncryptedBookmarks` treats `EncryptedBookmarks2` as primary whenever it exists. Reads, writes, backups and restores go through it. `Bookmarks` is used only when there is no encrypted file, and is kept identical while both exist.
+  - Format (macOS os_crypt `v10`): `"v10"` + AES-128-CBC, PKCS#7, IV of 16 spaces, key = PBKDF2-SHA1(Keychain "<Browser> Safe Storage" password, salt `saltysalt`, 1003 rounds, 16 bytes). The plaintext is the same JSON as `Bookmarks`.
+  - The Keychain key is fetched only when an encrypted file exists, and cached (including a denial) until quit.
+  - `BrowserConfig.bookmarkFilePath` stays the `Bookmarks` path for encrypted-only profiles. Watcher events on `EncryptedBookmarks2` are mapped to it.

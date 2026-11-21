@@ -26,6 +26,11 @@ protocol BrowserParser: Sendable {
     var filePath: URL { get }
     func read() throws -> [ParsedBookmark]
     func write(nodes: [ParsedBookmark]) throws
+    /// Saves the current bookmarks as a backup beside `filePath`.
+    @discardableResult
+    func createBackup(manual: Bool) throws -> URL?
+    /// Replaces the live bookmarks with `backup`; the browser must not be running.
+    func restore(_ backup: BackupEntry) throws
 }
 
 /// The parser for one profile's bookmark file (or a backup of it).
@@ -38,7 +43,10 @@ func makeBookmarkParser(bundleId: String, profileName: String, fileURL: URL) -> 
     case "com.officecommun.search":
         return SearchParser(filePath: fileURL)
     default:
-        return ChromeParser(filePath: fileURL)
+        return ChromeParser(
+            filePath: fileURL,
+            encrypted: ChromiumEncryptedBookmarks.forPlainFile(fileURL, bundleId: bundleId)
+        )
     }
 }
 
@@ -46,7 +54,16 @@ extension BrowserParser {
     /// Snapshots the current file before it is overwritten. See `BackupStore`
     /// for naming and retention.
     func performBackup() throws {
-        try BackupStore.createBackup(of: filePath)
+        try createBackup(manual: false)
+    }
+
+    @discardableResult
+    func createBackup(manual: Bool) throws -> URL? {
+        try BackupStore.createBackup(of: filePath, manual: manual)
+    }
+
+    func restore(_ backup: BackupEntry) throws {
+        try BackupStore.restore(backup, over: filePath)
     }
 }
 

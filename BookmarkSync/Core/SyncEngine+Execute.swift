@@ -216,8 +216,10 @@ extension SyncEngine {
                     
                     // 2. File mod time is newer than last sync time
                     if !isTriggered, let lastSync = config.lastSyncTime {
-                        if let fileAttr = try? FileManager.default.attributesOfItem(atPath: config.bookmarkFilePath),
-                           let fileModDate = fileAttr[.modificationDate] as? Date {
+                        let modDates = ChromiumEncryptedBookmarks.storagePaths(for: config.bookmarkFilePath).compactMap {
+                            (try? FileManager.default.attributesOfItem(atPath: $0))?[.modificationDate] as? Date
+                        }
+                        if let fileModDate = modDates.max() {
                             if fileModDate.timeIntervalSince(lastSync) > 1.0 {
                                 SyncLog.event("\(config.browserName) (\(config.profileName)) changed while app closed (mod: \(fileModDate), last sync: \(lastSync))")
                                 isTriggered = true

@@ -62,7 +62,21 @@ enum BackupStore {
     static func createBackup(of fileURL: URL, now: Date = Date(), manual: Bool = false) throws -> URL? {
         let fm = FileManager.default
         guard fm.fileExists(atPath: fileURL.path) else { return nil }
+        return try storeBackup(of: fileURL, now: now, manual: manual) { try fm.copyItem(at: fileURL, to: $0) }
+    }
 
+    /// Backs up `contents` as the current state of `fileURL`.
+    /// Used when the live data is not the plain file, as with Chrome's encrypted bookmarks.
+    @discardableResult
+    static func createBackup(of fileURL: URL, contents: Data, now: Date = Date(), manual: Bool = false) throws -> URL {
+        try storeBackup(of: fileURL, now: now, manual: manual) { target in
+            try contents.write(to: target, options: .withoutOverwriting)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
+        }
+    }
+
+    private static func storeBackup(of fileURL: URL, now: Date, manual: Bool, save: (URL) throws -> Void) throws -> URL {
+        let fm = FileManager.default
         let dir = fileURL.deletingLastPathComponent()
         let base = "\(fileURL.lastPathComponent)\(marker)\(manual ? manualPrefix : "")\(timestampFormatter.string(from: now))"
         var target = dir.appendingPathComponent(base)
@@ -71,7 +85,7 @@ enum BackupStore {
             target = dir.appendingPathComponent("\(base)-\(suffix)")
             suffix += 1
         }
-        try fm.copyItem(at: fileURL, to: target)
+        try save(target)
 
         let timestamped = listBackups(for: fileURL).filter { $0.kind == .timestamped }
         for url in filesToPrune(timestamped, now: now) {
