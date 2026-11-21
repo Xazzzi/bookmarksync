@@ -1,3 +1,5 @@
+1.4.1
+- Fixed constant CPU use while idle with Firefox enabled
 1.4.0
 - Search browser support
 - Chrome's encrypted bookmarks are read and written directly; macOS asks for access to Chrome's Keychain key after you allow it in the menu bar

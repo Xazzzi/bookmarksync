@@ -24,8 +24,8 @@ targets:
         CFBundleLocalizations: [en, zh-Hans, uk, es]
         CFBundleIdentifier: app.xazi.BookmarkSync
         CFBundleName: BookmarkSync
-        CFBundleShortVersionString: 1.4.0
-        CFBundleVersion: "4"
+        CFBundleShortVersionString: 1.4.1
+        CFBundleVersion: "5"
     settings:
       CODE_SIGN_STYLE: Automatic
       DEVELOPMENT_TEAM: MCC7MZGLZ8
@@ -42,8 +42,8 @@ targets:
       properties:
         CFBundleIdentifier: app.xazi.BookmarkSyncTests
         CFBundleName: BookmarkSyncTests
-        CFBundleShortVersionString: 1.4.0
-        CFBundleVersion: "4"
+        CFBundleShortVersionString: 1.4.1
+        CFBundleVersion: "5"
     settings:
       CODE_SIGN_STYLE: Automatic
       DEVELOPMENT_TEAM: MCC7MZGLZ8
