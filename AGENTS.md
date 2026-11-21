@@ -95,5 +95,5 @@ graph TD
 - **The Fix**:
   - `ChromiumEncryptedBookmarks` treats `EncryptedBookmarks2` as primary whenever it exists. Reads, writes, backups and restores go through it. `Bookmarks` is used only when there is no encrypted file, and is kept identical while both exist.
   - Format (macOS os_crypt `v10`): `"v10"` + AES-128-CBC, PKCS#7, IV of 16 spaces, key = PBKDF2-SHA1(Keychain "<Browser> Safe Storage" password, salt `saltysalt`, 1003 rounds, 16 bytes). The plaintext is the same JSON as `Bookmarks`.
-  - The Keychain key is fetched only when an encrypted file exists, and cached (including a denial) until quit.
+  - The Keychain is never asked before the user clicks Allow Keychain Access in the menu bar (`KeychainAccessBanner`). Until then the browser's profiles are skipped like an unreadable file, so nothing is deleted. Consent persists in `UserDefaults` per Keychain service. The key and a denial are cached until quit or Try Again.
   - `BrowserConfig.bookmarkFilePath` stays the `Bookmarks` path for encrypted-only profiles. Watcher events on `EncryptedBookmarks2` are mapped to it.

@@ -151,3 +151,12 @@
 "Could not check for updates: %@" = "No se pudo buscar actualizaciones: %@";
 "Once a week, BookmarkSync asks bookmarksync.xazi.app for the latest version number. Only the app's own version is sent." = "Una vez por semana, BookmarkSync consulta a bookmarksync.xazi.app el número de la última versión. Solo se envía la versión de la propia app.";
 "Unexpected update file contents" = "Contenido inesperado del archivo de actualización";
+"Keychain Access Needed" = "Se necesita acceso al llavero";
+"Keychain Access Denied" = "Acceso al llavero denegado";
+"%1$@ encrypts its bookmarks file. To sync it, BookmarkSync needs %1$@'s encryption key from your Keychain." = "%1$@ cifra su archivo de marcadores. Para sincronizarlo, BookmarkSync necesita la clave de cifrado de %1$@ de tu llavero.";
+"macOS will then ask twice: to allow access to “%@”, and for your login keychain password. Choose Always Allow both times so it does not ask again." = "Después macOS preguntará dos veces: para permitir el acceso a “%@” y por la contraseña de tu llavero de inicio de sesión. Elige Permitir siempre las dos veces para que no vuelva a preguntar.";
+"The same key also protects %@'s saved passwords and cookies. BookmarkSync uses it only for the bookmarks file, and the key never leaves this Mac." = "La misma clave también protege las contraseñas y cookies guardadas de %@. BookmarkSync solo la usa para el archivo de marcadores, y la clave nunca sale de este Mac.";
+"Until then, these profiles are not synced and nothing in them is changed." = "Hasta entonces, estos perfiles no se sincronizan y no se cambia nada en ellos.";
+"Allow Keychain Access" = "Permitir acceso al llavero";
+"BookmarkSync could not get %@'s encryption key, so these profiles are not synced. Nothing in them is changed." = "BookmarkSync no pudo obtener la clave de cifrado de %@, así que estos perfiles no se sincronizan. No se cambia nada en ellos.";
+"Try Again" = "Reintentar";

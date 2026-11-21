@@ -172,3 +172,80 @@ final class ChromeEncryptedBookmarksTests: XCTestCase {
         XCTAssertEqual(ChromiumEncryptedBookmarks.storagePaths(for: "/x/places.sqlite"), ["/x/places.sqlite"])
     }
 }
+
+final class ChromiumSafeStorageTests: XCTestCase {
+    private var suiteName: String!
+    private var suite: UserDefaults!
+    private var savedDefaults: UserDefaults!
+    private var savedRead: ((String) throws -> Data)!
+    private var service: String!
+
+    override func setUp() {
+        suiteName = "ChromiumSafeStorageTests_\(UUID().uuidString)"
+        suite = UserDefaults(suiteName: suiteName)
+        savedDefaults = ChromiumSafeStorage.defaults
+        savedRead = ChromiumSafeStorage.readPassword
+        ChromiumSafeStorage.defaults = suite
+        service = "Test Safe Storage \(UUID().uuidString)"
+    }
+
+    override func tearDown() {
+        ChromiumSafeStorage.defaults = savedDefaults
+        ChromiumSafeStorage.readPassword = savedRead
+        suite.removePersistentDomain(forName: suiteName)
+    }
+
+    func testKeychainIsNotAskedBeforeConsent() throws {
+        var calls = 0
+        ChromiumSafeStorage.readPassword = { _ in calls += 1; return Data("pw".utf8) }
+
+        XCTAssertThrowsError(try ChromiumSafeStorage.key(service: service)) { error in
+            XCTAssertEqual(ChromiumKeyIssue(error), .needsConsent)
+        }
+        XCTAssertEqual(calls, 0)
+
+        ChromiumSafeStorage.grantConsent(service: service)
+        XCTAssertEqual(try ChromiumSafeStorage.key(service: service), ChromiumOSCrypt.deriveKey(password: Data("pw".utf8)))
+        _ = try ChromiumSafeStorage.key(service: service)
+        XCTAssertEqual(calls, 1, "The key is cached after the first read")
+        XCTAssertTrue(ChromiumSafeStorage.hasConsent(service: service), "Consent persists across launches")
+    }
+
+    func testDenialIsRememberedUntilTryAgain() throws {
+        var calls = 0
+        var deny = true
+        let service = self.service!
+        ChromiumSafeStorage.readPassword = { _ in
+            calls += 1
+            if deny { throw ChromiumEncryptionError.keychain(service: service, status: errSecUserCanceled) }
+            return Data("pw".utf8)
+        }
+        ChromiumSafeStorage.grantConsent(service: service)
+
+        XCTAssertThrowsError(try ChromiumSafeStorage.key(service: service)) { error in
+            guard case .failed = ChromiumKeyIssue(error) else { return XCTFail("Expected a failed issue, got \(error)") }
+        }
+        XCTAssertThrowsError(try ChromiumSafeStorage.key(service: service))
+        XCTAssertEqual(calls, 1, "A denial does not prompt again on every sync")
+
+        deny = false
+        ChromiumSafeStorage.grantConsent(service: service)
+        XCTAssertNoThrow(try ChromiumSafeStorage.key(service: service))
+        XCTAssertEqual(calls, 2)
+    }
+
+    func testEncryptedChromeProfileWithoutConsentIsSkippedWithoutPrompt() throws {
+        var calls = 0
+        ChromiumSafeStorage.readPassword = { _ in calls += 1; return Data("pw".utf8) }
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("NoConsent_\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data("v10 sealed".utf8).write(to: dir.appendingPathComponent("EncryptedBookmarks2"))
+
+        let parser = makeBookmarkParser(bundleId: "com.google.Chrome", profileName: "Default", fileURL: dir.appendingPathComponent("Bookmarks"))
+        XCTAssertThrowsError(try parser.read()) { error in
+            XCTAssertEqual(ChromiumKeyIssue(error), .needsConsent)
+        }
+        XCTAssertEqual(calls, 0)
+    }
+}

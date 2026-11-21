@@ -151,3 +151,12 @@
 "Could not check for updates: %@" = "无法检查更新：%@";
 "Once a week, BookmarkSync asks bookmarksync.xazi.app for the latest version number. Only the app's own version is sent." = "BookmarkSync 每周向 bookmarksync.xazi.app 查询一次最新版本号，只发送应用自身的版本号。";
 "Unexpected update file contents" = "更新文件内容无法识别";
+"Keychain Access Needed" = "需要钥匙串访问权限";
+"Keychain Access Denied" = "钥匙串访问被拒绝";
+"%1$@ encrypts its bookmarks file. To sync it, BookmarkSync needs %1$@'s encryption key from your Keychain." = "%1$@ 会加密其书签文件。要同步它，BookmarkSync 需要从你的钥匙串中获取 %1$@ 的加密密钥。";
+"macOS will then ask twice: to allow access to “%@”, and for your login keychain password. Choose Always Allow both times so it does not ask again." = "随后 macOS 会询问两次：一次是允许访问“%@”，一次是输入登录钥匙串密码。两次都请选择“始终允许”，之后就不会再询问。";
+"The same key also protects %@'s saved passwords and cookies. BookmarkSync uses it only for the bookmarks file, and the key never leaves this Mac." = "同一密钥也保护 %@ 保存的密码和 Cookie。BookmarkSync 只将其用于书签文件，且密钥不会离开这台 Mac。";
+"Until then, these profiles are not synced and nothing in them is changed." = "在此之前，这些配置文件不会同步，其中的内容也不会被更改。";
+"Allow Keychain Access" = "允许访问钥匙串";
+"BookmarkSync could not get %@'s encryption key, so these profiles are not synced. Nothing in them is changed." = "BookmarkSync 无法获取 %@ 的加密密钥，因此这些配置文件不会同步。其中的内容不会被更改。";
+"Try Again" = "重试";

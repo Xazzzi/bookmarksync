@@ -140,6 +140,10 @@ struct TrayMenu: View {
                             .font(.system(size: 12, weight: .semibold))
                     }
 
+                    if let issue = viewModel.chromiumKeyIssues[bundleId] {
+                        KeychainAccessBanner(viewModel: viewModel, bundleId: bundleId, browserName: browserName, issue: issue)
+                    }
+
                     if browserName == "Safari" && !viewModel.isFullDiskAccessGranted {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(spacing: 4) {

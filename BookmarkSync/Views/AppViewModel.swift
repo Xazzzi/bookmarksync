@@ -17,6 +17,20 @@ class AppViewModel: ObservableObject {
     @Published var readFailedConfigIds: Set<String> = []
     /// Browsers with writes queued until the user quits them.
     @Published var browsersAwaitingQuit: Set<String> = []
+    /// Browsers whose encrypted bookmarks wait on Keychain access, by bundle id.
+    @Published var chromiumKeyIssues: [String: ChromiumKeyIssue] = [:]
+
+    func updateChromiumKeyIssues(_ issues: [String: ChromiumKeyIssue]) {
+        if issues != chromiumKeyIssues { chromiumKeyIssues = issues }
+    }
+
+    /// The user's go-ahead from the menu bar; the sync it starts shows the macOS prompt.
+    func allowKeychainAccess(bundleId: String) {
+        guard let service = ChromiumSafeStorage.services[bundleId] else { return }
+        ChromiumSafeStorage.grantConsent(service: service)
+        chromiumKeyIssues[bundleId] = nil
+        syncEngine?.triggerSync(changedPaths: [], forceImmediate: true)
+    }
 
     /// Profiles whose pre-existing empty folders have been added to the hub.
     var migratedEmptyFolderConfigIds: Set<String> {

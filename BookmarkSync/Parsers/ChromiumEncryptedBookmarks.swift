@@ -57,19 +57,22 @@ func writePrivately(_ data: Data, to url: URL) throws {
 }
 
 enum ChromiumEncryptionError: LocalizedError {
+    case consentRequired(service: String)
     case unsupportedFormat
     case cryptFailed(Int32)
     case keychain(service: String, status: OSStatus)
 
     var errorDescription: String? {
         switch self {
+        case .consentRequired(let service):
+            return "BookmarkSync needs your go-ahead in the menu bar before it asks the Keychain for \"\(service)\"."
         case .unsupportedFormat:
             return "Encrypted bookmarks use an unsupported format (expected a \"v10\" prefix)."
         case .cryptFailed(let status):
             return "Encrypted bookmarks could not be decrypted (CommonCrypto status \(status))."
         case .keychain(let service, let status):
             let reason = SecCopyErrorMessageString(status, nil) as String? ?? "OSStatus \(status)"
-            return "Could not read \"\(service)\" from the Keychain: \(reason). Allow access when asked; after a denial, restart BookmarkSync to be asked again."
+            return "Could not read \"\(service)\" from the Keychain: \(reason). Use Try Again in the menu bar to be asked again."
         }
     }
 }
@@ -134,8 +137,23 @@ enum ChromiumOSCrypt {
     }
 }
 
+/// Why a browser's encrypted bookmarks cannot be read yet, as shown in the menu bar.
+enum ChromiumKeyIssue: Equatable, Sendable {
+    case needsConsent
+    case failed(String)
+
+    init?(_ error: Error) {
+        switch error as? ChromiumEncryptionError {
+        case .consentRequired: self = .needsConsent
+        case .keychain: self = .failed(error.localizedDescription)
+        default: return nil
+        }
+    }
+}
+
 /// Each Chromium browser's os_crypt key, from its "<Name> Safe Storage" Keychain item.
-/// The key and a denial are both kept until the app quits, so syncs never prompt twice.
+/// The Keychain is never asked before the user agrees in the menu bar.
+/// The key and a denial are kept until the app quits or the user retries.
 enum ChromiumSafeStorage {
     static let services: [String: String] = [
         "com.google.Chrome": "Chrome Safe Storage",
@@ -146,16 +164,38 @@ enum ChromiumSafeStorage {
         "org.chromium.Chromium": "Chromium Safe Storage"
     ]
 
+    static let consentDefaultsKey = "chromiumKeychainConsent"
+    // Swapped by tests.
+    static var defaults: UserDefaults = .standard
+    static var readPassword: (String) throws -> Data = readKeychainPassword
+
     // One lock for all browsers, so concurrent profile reads queue behind a single prompt.
     private static let lock = NSLock()
     private static var cache: [String: Result<Data, Error>] = [:]
+
+    static func hasConsent(service: String) -> Bool {
+        defaults.stringArray(forKey: consentDefaultsKey)?.contains(service) ?? false
+    }
+
+    /// Records the user's go-ahead and forgets an earlier denial, so the next read asks macOS.
+    static func grantConsent(service: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        cache[service] = nil
+        var granted = defaults.stringArray(forKey: consentDefaultsKey) ?? []
+        if !granted.contains(service) {
+            granted.append(service)
+            defaults.set(granted.sorted(), forKey: consentDefaultsKey)
+        }
+    }
 
     static func key(service: String) throws -> Data {
         lock.lock()
         defer { lock.unlock() }
         if let cached = cache[service] { return try cached.get() }
+        guard hasConsent(service: service) else { throw ChromiumEncryptionError.consentRequired(service: service) }
 
-        let result = Result { try fetchKey(service: service) }
+        let result = Result { ChromiumOSCrypt.deriveKey(password: try readPassword(service)) }
         switch result {
         case .success:
             cache[service] = result
@@ -168,7 +208,7 @@ enum ChromiumSafeStorage {
         return try result.get()
     }
 
-    private static func fetchKey(service: String) throws -> Data {
+    private static func readKeychainPassword(service: String) throws -> Data {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -181,6 +221,6 @@ enum ChromiumSafeStorage {
             throw ChromiumEncryptionError.keychain(service: service, status: status)
         }
         SyncLog.event("Read the \(service) key from the Keychain")
-        return ChromiumOSCrypt.deriveKey(password: password)
+        return password
     }
 }

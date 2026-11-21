@@ -10,10 +10,28 @@ private struct ProfileRead: Sendable {
     let diskFingerprint: String
 }
 
+/// What reading all requested profiles produced.
+private struct ProfileReads: Sendable {
+    var reads: [ProfileRead] = []
+    /// Profiles waiting on their browser's Keychain key, by config id.
+    var keyIssues: [String: ProfileKeyIssue] = [:]
+}
+
+private struct ProfileKeyIssue: Sendable {
+    let bundleId: String
+    let issue: ChromiumKeyIssue
+}
+
+private enum ProfileReadOutcome: Sendable {
+    case read(ProfileRead)
+    case keyIssue(configId: String, ProfileKeyIssue)
+    case failed
+}
+
 /// Reads every requested profile's bookmark file. Free of SwiftData and of the
 /// main actor: file I/O, JSON/plist decoding and Firefox's SQLite copy+query all
 /// happen here so they never stall the UI.
-private func readProfiles(_ requests: [(configId: String, bundleId: String, profileName: String, path: String, setId: String)]) async -> [ProfileRead] {
+private func readProfiles(_ requests: [(configId: String, bundleId: String, profileName: String, path: String, setId: String)]) async -> ProfileReads {
     // The entire point of this function is to keep parsing off the UI thread.
     // Whether it does depends on subtle isolation rules (a nonisolated async
     // function does not inherit its caller's actor), so assert it rather than
@@ -21,7 +39,7 @@ private func readProfiles(_ requests: [(configId: String, bundleId: String, prof
     // runs and the test suite fail loudly instead of silently regressing.
     dispatchPrecondition(condition: .notOnQueue(.main))
 
-    return await withTaskGroup(of: ProfileRead?.self) { group in
+    return await withTaskGroup(of: ProfileReadOutcome.self) { group in
         for request in requests {
             group.addTask {
                 let url = URL(fileURLWithPath: request.path)
@@ -41,22 +59,29 @@ private func readProfiles(_ requests: [(configId: String, bundleId: String, prof
                             index: node.index
                         )
                     }
-                    return ProfileRead(
+                    return .read(ProfileRead(
                         configId: request.configId,
                         parser: parser,
                         nodes: prefixed,
                         diskFingerprint: BookmarkSnapshotFingerprint.compute(raw)
-                    )
+                    ))
                 } catch {
                     SyncLog.error("Failed to read \(request.bundleId) (\(request.profileName)) - skipping: \(error)")
-                    return nil
+                    if let issue = ChromiumKeyIssue(error) {
+                        return .keyIssue(configId: request.configId, ProfileKeyIssue(bundleId: request.bundleId, issue: issue))
+                    }
+                    return .failed
                 }
             }
         }
 
-        var results: [ProfileRead] = []
-        for await case let read? in group {
-            results.append(read)
+        var results = ProfileReads()
+        for await outcome in group {
+            switch outcome {
+            case .read(let read): results.reads.append(read)
+            case .keyIssue(let configId, let issue): results.keyIssues[configId] = issue
+            case .failed: break
+            }
         }
         return results
     }
@@ -85,6 +110,7 @@ extension SyncEngine {
 
         guard !enabledConfigs.isEmpty else {
             viewModel.syncStatus = "Idle"
+            viewModel.updateChromiumKeyIssues([:])
             return
         }
 
@@ -98,8 +124,13 @@ extension SyncEngine {
 
         isSyncing = true
         Task { [weak self] in
-            let reads = await readProfiles(requests)
+            let result = await readProfiles(requests)
             guard let self else { return }
+            self.viewModel.updateChromiumKeyIssues(Dictionary(
+                result.keyIssues.values.map { ($0.bundleId, $0.issue) },
+                uniquingKeysWith: { first, _ in first }
+            ))
+            let reads = result.reads
             // No `await`: this Task inherits the engine's main-actor isolation,
             // which is exactly where the SwiftData work below belongs. Only the
             // read above hops off the main thread.
@@ -145,9 +176,10 @@ extension SyncEngine {
             let readsByConfig = Dictionary(reads.map { ($0.configId, $0) }, uniquingKeysWith: { first, _ in first })
 
             // Profiles whose file could not be read this pass (Safari without Full
-            // Disk Access is reported separately and is not a read failure).
+            // Disk Access and browsers awaiting Keychain access are reported separately).
             let failedReads = Set(enabledConfigs.filter { config in
                 readsByConfig[config.id] == nil &&
+                viewModel.chromiumKeyIssues[config.bundleId] == nil &&
                 !(config.bundleId == "com.apple.Safari" && !viewModel.isFullDiskAccessGranted)
             }.map { $0.id })
             if failedReads != viewModel.readFailedConfigIds {

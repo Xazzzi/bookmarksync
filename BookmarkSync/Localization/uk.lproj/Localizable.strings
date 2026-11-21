@@ -151,3 +151,12 @@
 "Could not check for updates: %@" = "Не вдалося перевірити оновлення: %@";
 "Once a week, BookmarkSync asks bookmarksync.xazi.app for the latest version number. Only the app's own version is sent." = "Раз на тиждень BookmarkSync запитує в bookmarksync.xazi.app номер останньої версії. Надсилається лише версія самої програми.";
 "Unexpected update file contents" = "Неочікуваний вміст файлу оновлення";
+"Keychain Access Needed" = "Потрібен доступ до В'язки ключів";
+"Keychain Access Denied" = "Доступ до В'язки ключів заборонено";
+"%1$@ encrypts its bookmarks file. To sync it, BookmarkSync needs %1$@'s encryption key from your Keychain." = "%1$@ шифрує свій файл закладок. Щоб синхронізувати його, BookmarkSync потрібен ключ шифрування %1$@ із вашої В'язки ключів.";
+"macOS will then ask twice: to allow access to “%@”, and for your login keychain password. Choose Always Allow both times so it does not ask again." = "Далі macOS запитає двічі: дозвіл на доступ до «%@» і пароль вашої В'язки ключів для входу. Обидва рази виберіть «Завжди дозволяти», щоб запит більше не з'являвся.";
+"The same key also protects %@'s saved passwords and cookies. BookmarkSync uses it only for the bookmarks file, and the key never leaves this Mac." = "Цей самий ключ захищає збережені паролі та файли cookie %@. BookmarkSync використовує його лише для файлу закладок, і ключ ніколи не залишає цей Mac.";
+"Until then, these profiles are not synced and nothing in them is changed." = "Доти ці профілі не синхронізуються, і нічого в них не змінюється.";
+"Allow Keychain Access" = "Дозволити доступ до В'язки ключів";
+"BookmarkSync could not get %@'s encryption key, so these profiles are not synced. Nothing in them is changed." = "BookmarkSync не вдалося отримати ключ шифрування %@, тому ці профілі не синхронізуються. Нічого в них не змінюється.";
+"Try Again" = "Спробувати ще раз";

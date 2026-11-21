@@ -151,3 +151,12 @@
 "Could not check for updates: %@" = "Could not check for updates: %@";
 "Once a week, BookmarkSync asks bookmarksync.xazi.app for the latest version number. Only the app's own version is sent." = "Once a week, BookmarkSync asks bookmarksync.xazi.app for the latest version number. Only the app's own version is sent.";
 "Unexpected update file contents" = "Unexpected update file contents";
+"Keychain Access Needed" = "Keychain Access Needed";
+"Keychain Access Denied" = "Keychain Access Denied";
+"%1$@ encrypts its bookmarks file. To sync it, BookmarkSync needs %1$@'s encryption key from your Keychain." = "%1$@ encrypts its bookmarks file. To sync it, BookmarkSync needs %1$@'s encryption key from your Keychain.";
+"macOS will then ask twice: to allow access to “%@”, and for your login keychain password. Choose Always Allow both times so it does not ask again." = "macOS will then ask twice: to allow access to “%@”, and for your login keychain password. Choose Always Allow both times so it does not ask again.";
+"The same key also protects %@'s saved passwords and cookies. BookmarkSync uses it only for the bookmarks file, and the key never leaves this Mac." = "The same key also protects %@'s saved passwords and cookies. BookmarkSync uses it only for the bookmarks file, and the key never leaves this Mac.";
+"Until then, these profiles are not synced and nothing in them is changed." = "Until then, these profiles are not synced and nothing in them is changed.";
+"Allow Keychain Access" = "Allow Keychain Access";
+"BookmarkSync could not get %@'s encryption key, so these profiles are not synced. Nothing in them is changed." = "BookmarkSync could not get %@'s encryption key, so these profiles are not synced. Nothing in them is changed.";
+"Try Again" = "Try Again";
