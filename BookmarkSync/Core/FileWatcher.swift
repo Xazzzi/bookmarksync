@@ -25,8 +25,12 @@ class FileWatcher {
         let fsCallback: FSEventStreamCallback = { (streamRef, clientCallBackInfo, numEvents, eventPaths, eventFlags, eventIds) in
             guard let info = clientCallBackInfo else { return }
             let watcher = Unmanaged<FileWatcher>.fromOpaque(info).takeUnretainedValue()
-            let paths = Unmanaged<NSArray>.fromOpaque(eventPaths).takeUnretainedValue() as? [String] ?? []
-            
+            let allPaths = Unmanaged<NSArray>.fromOpaque(eventPaths).takeUnretainedValue() as? [String] ?? []
+            let paths = zip(allPaths, UnsafeBufferPointer(start: eventFlags, count: numEvents))
+                .filter { FileWatcher.isContentChange($0.1) }
+                .map { $0.0 }
+            guard !paths.isEmpty else { return }
+
             DispatchQueue.main.async {
                 watcher.callback?(paths)
             }
@@ -48,6 +52,15 @@ class FileWatcher {
         }
     }
     
+    /// False for metadata-only events, such as the `InodeMetaMod` an APFS clone of the file
+    /// (`FirefoxParser.read`) emits. Passing those made every read trigger the next sync.
+    static func isContentChange(_ flags: FSEventStreamEventFlags) -> Bool {
+        let content = kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemRemoved |
+            kFSEventStreamEventFlagItemRenamed | kFSEventStreamEventFlagItemModified
+        let rescan = kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagRootChanged
+        return flags & FSEventStreamEventFlags(content | rescan) != 0
+    }
+
     func stop() {
         if let stream = stream {
             FSEventStreamStop(stream)
